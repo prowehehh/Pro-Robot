@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Rout
 const express = require('express');
 const app = express();
 
+// تشغيل السيرفر لضمان بقاء البوت متصلاً
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🚀'));
 app.listen(3000, () => console.log('Server is ready!'));
 
@@ -14,21 +15,21 @@ const client = new Client({
   ],
 });
 
-// --- إعدادات الأيدي (IDs) ---
+// --- إعدادات الأيدي (IDs) المراجعة ---
 const WELCOME_CHANNEL_ID = '1482881348204101768';
 const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
 
-// --- تعريف الأوامر ---
+// --- تعريف الأوامر (Slash Commands) ---
 const commands = [
-  new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة البوت'),
+  new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة اتصال البوت'),
   new SlashCommandBuilder().setName('info').setDescription('تحديث معلومات السيرفر يدوياً'),
-  new SlashCommandBuilder().setName('server').setDescription('عرض معلومات السيرفر'),
-  new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت جديد').addStringOption(opt => opt.setName('question').setDescription('السؤال').setRequired(true)),
-  new SlashCommandBuilder().setName('clear').setDescription('مسح الرسائل').addIntegerOption(opt => opt.setName('amount').setDescription('العدد').setRequired(true)),
-  new SlashCommandBuilder().setName('mute').setDescription('إسكات عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)).addIntegerOption(opt => opt.setName('duration').setDescription('بالدقائق').setRequired(true)),
-  new SlashCommandBuilder().setName('unmute').setDescription('فك إسكات').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
+  new SlashCommandBuilder().setName('server').setDescription('عرض تفاصيل ومعلومات السيرفر'),
+  new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت جديد').addStringOption(opt => opt.setName('question').setDescription('سؤال التصويت').setRequired(true)),
+  new SlashCommandBuilder().setName('clear').setDescription('مسح عدد معين من الرسائل').addIntegerOption(opt => opt.setName('amount').setDescription('عدد الرسائل').setRequired(true)),
+  new SlashCommandBuilder().setName('mute').setDescription('إسكات عضو (Timeout)').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)).addIntegerOption(opt => opt.setName('duration').setDescription('المدة بالدقائق').setRequired(true)),
+  new SlashCommandBuilder().setName('unmute').setDescription('فك الإسكات عن عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
 ].map(command => command.toJSON());
@@ -36,20 +37,20 @@ const commands = [
 client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
   
-  // تفعيل حالة "Playing /help"
-  client.user.setActivity('/help', { type: 0 });
+  // حالة البوت (Watching /help)
+  client.user.setActivity('/help', { type: 3 }); 
 
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   try {
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('Slash commands updated!');
+    console.log('Successfully registered all Slash Commands.');
   } catch (error) { console.error(error); }
 
   updateLiveInfo();
   startAds();
 });
 
-// --- نظام الترحيب ---
+// --- نظام الترحيب و الرتب التلقائية ---
 client.on('guildMemberAdd', async (member) => {
   try {
     const role = member.guild.roles.cache.get(MEMBER_ROLE_ID);
@@ -78,14 +79,16 @@ Go to read the rules and information:
   updateLiveInfo(member.guild);
 });
 
-// --- نظام الإعلانات بأوقات مختلفة ---
+client.on('guildMemberRemove', (member) => updateLiveInfo(member.guild));
+
+// --- نظام الإعلانات بمواعيد مختلفة ونصوص صافية ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
   // إعلان 1: كل 30 دقيقة
   setInterval(async () => {
-    const ad1 = `Advertisement 1 is: If you want to make totem about onwe skin or picture about onwe skin.
+    const ad1 = `If you want to make totem about onwe skin or picture about onwe skin.
 Ask <@1480631975697055754>
 
 You will receive your request in there
@@ -95,14 +98,14 @@ https://discord.com/channels/1482874760940486699/1484397891693969601`;
 
   // إعلان 2: كل ساعتين (120 دقيقة)
   setInterval(async () => {
-    const ad2 = `Advertisement 2 is: All the news about the server is there
+    const ad2 = `All the news about the server is there
 https://discord.com/channels/1482874760940486699/1482934834899714048`;
     await channel.send(ad2);
   }, 120 * 60 * 1000);
 
-  // إعلان 3: كل ساعة (60 دقيقة) - النص المعدل
+  // إعلان 3: كل ساعة (60 دقيقة)
   setInterval(async () => {
-    const ad3 = `Advertisement 3 is: If you need to edit or make any texture pack.
+    const ad3 = `If you need to edit or make any texture pack.
 Click on here
 https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
     await channel.send(ad3);
@@ -115,16 +118,33 @@ client.on('interactionCreate', async interaction => {
   const { commandName, options, guild, member } = interaction;
 
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
+  
   if (commandName === 'server') {
-    const embed = new EmbedBuilder().setColor('#f1c40f').setTitle(`📊 ${guild.name}`).setThumbnail(guild.iconURL()).addFields({ name: '👥 Members', value: `${guild.memberCount}`, inline: true }).setTimestamp();
+    const embed = new EmbedBuilder()
+      .setColor('#f1c40f')
+      .setTitle(`📊 Server Info: ${guild.name}`)
+      .setThumbnail(guild.iconURL())
+      .addFields(
+        { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
+        { name: '👥 Members', value: `${guild.memberCount}`, inline: true },
+        { name: '📅 Created At', value: `${guild.createdAt.toDateString()}`, inline: false }
+      )
+      .setTimestamp();
     await interaction.reply({ embeds: [embed] });
   }
+
   if (commandName === 'clear') {
+    if (!member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return interaction.reply({ content: '⚠️ للإدارة فقط!', ephemeral: true });
     const amount = options.getInteger('amount');
     await interaction.channel.bulkDelete(Math.min(amount, 100));
-    await interaction.reply({ content: `✅ Done.`, ephemeral: true });
+    await interaction.reply({ content: `✅ تم مسح ${amount} رسالة.`, ephemeral: true });
   }
-  if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'Updated!', ephemeral: true }); }
+
+  if (commandName === 'info') {
+    updateLiveInfo(guild);
+    await interaction.reply({ content: 'تم تحديث البيانات!', ephemeral: true });
+  }
+
   if (commandName === 'mute') {
     const target = options.getMember('target');
     const time = options.getInteger('duration');
@@ -135,15 +155,30 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'ban') { await guild.members.ban(options.getUser('target')); await interaction.reply(`🚫 Done.`); }
 });
 
+// --- تحديث معلومات السيرفر المباشرة ---
 async function updateLiveInfo(guild) {
   if (!guild) guild = client.guilds.cache.first();
   const channel = client.channels.cache.get(INFO_CHANNEL_ID);
   if (!channel || !guild) return;
+
   const createdAt = guild.createdAt.toLocaleDateString('en-GB'); 
-  const info = `@everyone\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Onwer: <@1134146616857731173>\n• Robot: <@1495419259147386920>\n• Server from: Egypt\n• Date Server: ${createdAt}\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [Member, Ultimate, YouTube, Helper, Vip]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
-  const msgs = await channel.messages.fetch({ limit: 10 });
-  const botMsg = msgs.find(m => m.author.id === client.user.id);
-  if (botMsg) await botMsg.edit(info); else await channel.send(info);
+  const info = `@everyone
+[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]
+Information about server:-
+• Onwer: <@1134146616857731173>
+• Robot: <@1495419259147386920>
+• Server from: Egypt
+• Date Server: ${createdAt}
+• Total Members: ${guild.memberCount}
+• Ranks:
+→ [Member, Ultimate, YouTube, Helper, Vip]
+[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
+
+  try {
+    const messages = await channel.messages.fetch({ limit: 10 });
+    const botMsg = messages.find(m => m.author.id === client.user.id);
+    if (botMsg) await botMsg.edit(info); else await channel.send(info);
+  } catch (error) {}
 }
 
 client.login(process.env.TOKEN);
