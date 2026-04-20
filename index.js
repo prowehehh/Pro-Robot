@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Rout
 const express = require('express');
 const app = express();
 
-// تشغيل السيرفر لضمان بقاء البوت متصلاً
+// تشغيل السيرفر لضمان بقاء البوت متصلاً 24 ساعة
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🚀'));
 app.listen(3000, () => console.log('Server is ready!'));
 
@@ -81,7 +81,7 @@ Go to read the rules and information:
 
 client.on('guildMemberRemove', (member) => updateLiveInfo(member.guild));
 
-// --- نظام الإعلانات بمواعيد مختلفة ونصوص صافية ---
+// --- نظام الإعلانات مع المسح التلقائي بعد 15 دقيقة ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
@@ -93,22 +93,34 @@ Ask <@1480631975697055754>
 
 You will receive your request in there
 https://discord.com/channels/1482874760940486699/1484397891693969601`;
-    await channel.send(ad1);
+    
+    const sentMsg = await channel.send(ad1);
+    setTimeout(() => {
+      sentMsg.delete().catch(e => {});
+    }, 15 * 60 * 1000); // يمسح بعد 15 دقيقة
   }, 30 * 60 * 1000);
 
-  // إعلان 2: كل ساعتين (120 دقيقة)
+  // إعلان 2: كل ساعتين
   setInterval(async () => {
     const ad2 = `All the news about the server is there
 https://discord.com/channels/1482874760940486699/1482934834899714048`;
-    await channel.send(ad2);
+    
+    const sentMsg = await channel.send(ad2);
+    setTimeout(() => {
+      sentMsg.delete().catch(e => {});
+    }, 15 * 60 * 1000); // يمسح بعد 15 دقيقة
   }, 120 * 60 * 1000);
 
-  // إعلان 3: كل ساعة (60 دقيقة)
+  // إعلان 3: كل ساعة
   setInterval(async () => {
     const ad3 = `If you need to edit or make any texture pack.
 Click on here
 https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
-    await channel.send(ad3);
+    
+    const sentMsg = await channel.send(ad3);
+    setTimeout(() => {
+      sentMsg.delete().catch(e => {});
+    }, 15 * 60 * 1000); // يمسح بعد 15 دقيقة
   }, 60 * 60 * 1000);
 }
 
@@ -126,8 +138,7 @@ client.on('interactionCreate', async interaction => {
       .setThumbnail(guild.iconURL())
       .addFields(
         { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
-        { name: '👥 Members', value: `${guild.memberCount}`, inline: true },
-        { name: '📅 Created At', value: `${guild.createdAt.toDateString()}`, inline: false }
+        { name: '👥 Members', value: `${guild.memberCount}`, inline: true }
       )
       .setTimestamp();
     await interaction.reply({ embeds: [embed] });
