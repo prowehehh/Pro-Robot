@@ -1,4 +1,5 @@
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const translate = require('@vitalets/google-translate-api'); // مكتبة الترجمة
 const express = require('express');
 const app = express();
 
@@ -20,18 +21,28 @@ const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
 
-let ad1Msg = null;
-let ad2Msg = null;
-let ad3Msg = null;
+let ad1Msg = null, ad2Msg = null, ad3Msg = null;
 
+// --- تعريف الأوامر (بما فيها الترجمة والمهام) ---
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة البوت'),
   new SlashCommandBuilder().setName('info').setDescription('تحديث معلومات السيرفر يدوياً'),
   new SlashCommandBuilder().setName('server').setDescription('عرض معلومات السيرفر'),
-  new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت').addStringOption(opt => opt.setName('question').setDescription('السؤال').setRequired(true)),
   new SlashCommandBuilder().setName('clear').setDescription('مسح رسائل').addIntegerOption(opt => opt.setName('amount').setDescription('العدد').setRequired(true)),
+  
+  // أمر الترجمة الجديد
+  new SlashCommandBuilder().setName('translate')
+    .setDescription('ترجمة نص معين')
+    .addStringOption(opt => opt.setName('text').setDescription('النص المراد ترجمته').setRequired(true))
+    .addStringOption(opt => opt.setName('to').setDescription('اللغة (ar للأرقام، en للإنجليزي)').setRequired(true)
+      .addChoices({ name: 'Arabic', value: 'ar' }, { name: 'English', value: 'en' })),
+
+  // أمر المهام الجديد
+  new SlashCommandBuilder().setName('todo')
+    .setDescription('إضافة مهمة لقائمة المهام الخاصة بك')
+    .addStringOption(opt => opt.setName('task').setDescription('المهمة التي تريد إضافتها').setRequired(true)),
+
   new SlashCommandBuilder().setName('mute').setDescription('إسكات عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)).addIntegerOption(opt => opt.setName('duration').setDescription('بالدقائق').setRequired(true)),
-  new SlashCommandBuilder().setName('unmute').setDescription('فك إسكات').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
 ].map(command => command.toJSON());
@@ -50,7 +61,7 @@ client.on('ready', async () => {
   startAds();
 });
 
-// --- نظام الترحيب ---
+// --- نظام الترحيب (بدون تعديل كما طلبت) ---
 client.on('guildMemberAdd', async (member) => {
   try {
     const role = member.guild.roles.cache.get(MEMBER_ROLE_ID);
@@ -79,12 +90,11 @@ Go to read the rules and information:
   updateLiveInfo(member.guild);
 });
 
-// --- نظام الإعلانات بنصوص سيف المحددة ---
+// --- نظام الإعلانات بنصوص سيف (بدون تعديل) ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
-  // إعلان 1: كل 30 دقيقة
   setInterval(async () => {
     if (ad1Msg) await ad1Msg.delete().catch(() => {});
     const ad1Text = `If you want to make totem about onwe skin or picture about onwe skin.
@@ -96,7 +106,6 @@ https://discord.com/channels/1482874760940486699/1484397891693969601`;
     setTimeout(async () => { if (ad1Msg) { await ad1Msg.delete().catch(() => {}); ad1Msg = null; } }, 15 * 60 * 1000);
   }, 30 * 60 * 1000);
 
-  // إعلان 2: كل ساعة (60 دقيقة)
   setInterval(async () => {
     if (ad2Msg) await ad2Msg.delete().catch(() => {});
     const ad2Text = `All the news about the server is there
@@ -105,7 +114,6 @@ https://discord.com/channels/1482874760940486699/1482934834899714048`;
     setTimeout(async () => { if (ad2Msg) { await ad2Msg.delete().catch(() => {}); ad2Msg = null; } }, 15 * 60 * 1000);
   }, 60 * 60 * 1000);
 
-  // إعلان 3: كل ساعة ونصف (90 دقيقة)
   setInterval(async () => {
     if (ad3Msg) await ad3Msg.delete().catch(() => {});
     const ad3Text = `If you need to edit or make any texture pack.
@@ -116,10 +124,35 @@ https://discord.com/channels/1482874760940486699/1482936392479936645 to request!
   }, 90 * 60 * 1000);
 }
 
-// --- الأوامر المساعدة ---
+// --- تنفيذ الأوامر (Interaction Create) ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName, options, guild } = interaction;
+  const { commandName, options, guild, user } = interaction;
+
+  // تنفيذ أمر الترجمة
+  if (commandName === 'translate') {
+    await interaction.deferReply({ ephemeral: true });
+    const text = options.getString('text');
+    const targetLang = options.getString('to');
+    
+    try {
+      const res = await translate(text, { to: targetLang });
+      await interaction.editReply(`**الترجمة:**\n${res.text}`);
+    } catch (err) {
+      await interaction.editReply('❌ حدث خطأ أثناء الترجمة.');
+    }
+  }
+
+  // تنفيذ أمر قائمة المهام
+  if (commandName === 'todo') {
+    const task = options.getString('task');
+    const embed = new EmbedBuilder()
+      .setTitle('📝 قائمة مهام جديدة')
+      .setDescription(`صاحب المهمة: ${user}\n\n**المهمة:**\n${task}`)
+      .setColor('#FFA500')
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed] });
+  }
 
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
   if (commandName === 'clear') {
@@ -128,14 +161,6 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({ content: `✅ Done.`, ephemeral: true });
   }
   if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'Updated!', ephemeral: true }); }
-  if (commandName === 'mute') {
-    const target = options.getMember('target');
-    const time = options.getInteger('duration');
-    await target.timeout(time * 60 * 1000);
-    await interaction.reply(`🔇 Done.`);
-  }
-  if (commandName === 'kick') { await options.getMember('target').kick(); await interaction.reply(`👢 Done.`); }
-  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')); await interaction.reply(`🚫 Done.`); }
 });
 
 async function updateLiveInfo(guild) {
