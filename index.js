@@ -20,10 +20,7 @@ const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
 
-// قائمة الكلمات الممنوعة
 const badWords = ['شتيمة1', 'شتيمة2', 'fuck', 'bitch', 'ass', 'sharmout'];
-
-let ad1Msg = null, ad2Msg = null, ad3Msg = null;
 
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة البوت'),
@@ -46,13 +43,12 @@ client.on('ready', async () => {
   } catch (error) { console.error(error); }
 
   updateLiveInfo();
-  startAds();
+  startAds(); // تشغيل نظام الإعلانات
 });
 
-// --- نظام الحماية (Protection) ---
+// --- نظام الحماية ---
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
-
   const content = message.content.toLowerCase();
   const hasLink = /(https?:\/\/[^\s]+)/g.test(content);
   const hasBadWord = badWords.some(word => content.includes(word));
@@ -80,94 +76,65 @@ client.on('guildMemberAdd', async (member) => {
   updateLiveInfo(member.guild);
 });
 
-// --- التعامل مع الأوامر (Interaction Create) ---
+// --- التعامل مع الأوامر ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-
   const { commandName, options, guild } = interaction;
 
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
-
   if (commandName === 'server') {
     const embed = new EmbedBuilder()
       .setTitle(`Server Info: ${guild.name}`)
       .setThumbnail(guild.iconURL())
-      .addFields(
-        { name: 'Total Members', value: `${guild.memberCount}`, inline: true },
-        { name: 'Created At', value: `${guild.createdAt.toLocaleDateString()}`, inline: true }
-      )
+      .addFields({ name: 'Total Members', value: `${guild.memberCount}`, inline: true })
       .setColor('#00ff00');
     await interaction.reply({ embeds: [embed] });
   }
-
   if (commandName === 'clear') {
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) 
-      return interaction.reply({ content: 'ماعندك صلاحية!', ephemeral: true });
     const amount = options.getInteger('amount');
     await interaction.channel.bulkDelete(Math.min(amount, 100), true);
-    await interaction.reply({ content: `✅ تم مسح ${amount} رسالة بنجاح.`, ephemeral: true });
+    await interaction.reply({ content: `✅ تم مسح ${amount} رسالة.`, ephemeral: true });
   }
-
   if (commandName === 'mute') {
     const target = options.getMember('target');
     const duration = options.getInteger('duration');
-    await target.timeout(duration * 60 * 1000, 'Muted by Pro Robot');
-    await interaction.reply(`🔇 تم إسكات ${target} لمدة ${duration} دقيقة.`);
+    await target.timeout(duration * 60 * 1000);
+    await interaction.reply(`🔇 تم إسكات ${target}.`);
   }
-
-  if (commandName === 'kick') {
-    const target = options.getMember('target');
-    await target.kick();
-    await interaction.reply(`👢 تم طرد ${target.user.tag} من السيرفر.`);
-  }
-
-  if (commandName === 'ban') {
-    const target = options.getUser('target');
-    await guild.members.ban(target);
-    await interaction.reply(`🚫 تم حظر ${target.tag} نهائياً.`);
-  }
-
-  if (commandName === 'info') {
-    updateLiveInfo(guild);
-    await interaction.reply({ content: '✅ تم تحديث Live Info!', ephemeral: true });
-  }
+  if (commandName === 'kick') { await options.getMember('target').kick(); await interaction.reply(`👢 Done.`); }
+  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')); await interaction.reply(`🚫 Done.`); }
+  if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'Updated!', ephemeral: true }); }
 });
 
-// --- نظام الإعلانات المحدث (نصوص سيف الجديدة) ---
+// --- نظام الإعلانات المطور بطلب سيف ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
-  // Advertisement 1: كل 30 دقيقة
-  setInterval(async () => {
-    if (ad1Msg) await ad1Msg.delete().catch(() => {});
-    const text1 = `Advertisement 1: If you want to make totem about onwe skin or picture about onwe skin.
-Ask <@1480631975697055754>
+  // دالة لإرسال الإعلان ومسحه بعد 15 دقيقة
+  const sendAd = async (content) => {
+    const msg = await channel.send(content);
+    setTimeout(() => {
+      msg.delete().catch(() => {}); // مسح الإعلان بعد 15 دقيقة بالظبط
+    }, 15 * 60 * 1000); 
+  };
 
-You will receive your request in there!
-https://discord.com/channels/1482874760940486699/1484397891693969601`;
-    ad1Msg = await channel.send(text1);
-    setTimeout(() => { if (ad1Msg) ad1Msg.delete().catch(() => {}); ad1Msg = null; }, 15 * 60 * 1000);
-  }, 30 * 60 * 1000);
+  const ad1 = `Advertisement 1: If you want to make totem about onwe skin or picture about onwe skin.\nAsk <@1480631975697055754>\n\nYou will receive your request in there!\nhttps://discord.com/channels/1482874760940486699/1484397891693969601`;
+  const ad2 = `Advertisement 2: All the news about the server is there!\nhttps://discord.com/channels/1482874760940486699/1482934834899714048`;
+  const ad3 = `Advertisement 3: If you need to edit or make any texture pack.\nYou can click on here\nhttps://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
 
-  // Advertisement 2: كل ساعة واحدة (60 دقيقة)
-  setInterval(async () => {
-    if (ad2Msg) await ad2Msg.delete().catch(() => {});
-    const text2 = `Advertisement 2: All the news about the server is there!
-https://discord.com/channels/1482874760940486699/1482934834899714048`;
-    ad2Msg = await channel.send(text2);
-    setTimeout(() => { if (ad2Msg) ad2Msg.delete().catch(() => {}); ad2Msg = null; }, 15 * 60 * 1000);
-  }, 60 * 60 * 1000);
+  // 1. يرسل الإعلان الأول فوراً عند تشغيل الكود
+  sendAd(ad1);
 
-  // Advertisement 3: كل ساعة ونصف (90 دقيقة)
-  setInterval(async () => {
-    if (ad3Msg) await ad3Msg.delete().catch(() => {});
-    const text3 = `Advertisement 3: If you need to edit or make any texture pack.
-You can click on here
-https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
-    ad3Msg = await channel.send(text3);
-    setTimeout(() => { if (ad3Msg) ad3Msg.delete().catch(() => {}); ad3Msg = null; }, 15 * 60 * 1000);
-  }, 90 * 60 * 1000);
+  // 2. ضبط المؤقتات للإرسال الدوري
+  // الإعلان الأول كل 30 دقيقة
+  setInterval(() => sendAd(ad1), 30 * 60 * 1000);
+
+  // الإعلان الثاني يبدأ بعد ساعة (60 دقيقة)
+  setInterval(() => sendAd(ad2), 60 * 60 * 1000);
+
+  // الإعلان الثالث يبدأ بعد ساعة ونصف (90 دقيقة)
+  setInterval(() => sendAd(ad3), 90 * 60 * 1000);
 }
 
 async function updateLiveInfo(guild) {
