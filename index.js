@@ -77,17 +77,17 @@ Go to read the rules and information:
   updateLiveInfo(member.guild);
 });
 
-// --- نظام الإعلانات (Ad 1 فقط بالنص الجديد) ---
+// --- نظام الإعلانات الموحد (Ad 1 فقط) ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
-  // الإعلان يظهر كل 30 دقيقة
+  // إعلان موحد: يرسل كل 30 دقيقة ويمسح بعد 15 دقيقة
   setInterval(async () => {
-    // مسح الرسالة القديمة إذا كانت موجودة قبل إرسال الجديدة
+    // مسح الرسالة القديمة إذا كانت موجودة
     if (ad1Msg) await ad1Msg.delete().catch(() => {});
     
-    const ad1Text = `→ If you want to make totem about onwe skin or picture about onwe skin.
+    const adContent = `If you want to make totem about onwe skin or picture about onwe skin.
 Ask @Dream234
 → You will receive your request in there!
 https://discord.com/channels/1482874760940486699/1484397891693969601
@@ -98,20 +98,21 @@ https://discord.com/channels/1482874760940486699/1482934834899714048
 - If you need to edit or make any texture pack.
 You can click on here!
 https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
+    
+    ad1Msg = await channel.send(adContent);
 
-    ad1Msg = await channel.send(ad1Text);
-
-    // مسح الرسالة بعد 15 دقيقة
+    // مؤقت لمسح الرسالة بعد 15 دقيقة
     setTimeout(async () => {
       if (ad1Msg) {
         await ad1Msg.delete().catch(() => {});
         ad1Msg = null;
       }
     }, 15 * 60 * 1000);
+
   }, 30 * 60 * 1000);
 }
 
-// --- تنفيذ الأوامر ---
+// --- الأوامر المساعدة ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName, options, guild } = interaction;
