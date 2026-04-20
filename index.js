@@ -14,7 +14,7 @@ const client = new Client({
   ],
 });
 
-// --- الإعدادات (IDs) ---
+// --- إعدادات الأيدي (IDs) ---
 const WELCOME_CHANNEL_ID = '1482881348204101768';
 const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
@@ -23,18 +23,15 @@ const MEMBER_ROLE_ID = '1482883802186514615';
 // قائمة الحماية (الكلمات الممنوعة)
 const badWords = ['شتيمة1', 'شتيمة2', 'كس', 'شرموط', 'fuck', 'ass', 'bitch']; 
 
-let ad1Msg, ad2Msg, ad3Msg;
+let ad1Msg = null, ad2Msg = null, ad3Msg = null;
 
 client.on('ready', async () => {
-  console.log(`🛡️ ${client.user.tag} Is Guarding The Server!`);
+  console.log(`🛡️ ${client.user.tag} Is Ready!`);
   client.user.setActivity('/help', { type: 3 }); 
-  
+
   // تسجيل الأوامر الأساسية
   const commands = [
     new SlashCommandBuilder().setName('clear').setDescription('مسح الرسائل').addIntegerOption(o => o.setName('amount').setDescription('العدد').setRequired(true)),
-    new SlashCommandBuilder().setName('mute').setDescription('إسكات عضو').addUserOption(o => o.setName('target').setDescription('العضو').setRequired(true)).addIntegerOption(o => o.setName('time').setDescription('بالدقائق').setRequired(true)),
-    new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(o => o.setName('target').setDescription('العضو').setRequired(true)),
-    new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(o => o.setName('target').setDescription('العضو').setRequired(true)),
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -44,20 +41,19 @@ client.on('ready', async () => {
   startAds();
 });
 
-// --- نظام الحماية القوي (Anti-BadWords, Links, Spam) ---
+// --- نظام الحماية (الشتائم والروابط) ---
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
-
   const content = message.content.toLowerCase();
   const hasLink = /(https?:\/\/[^\s]+)/g.test(content);
   const hasBadWord = badWords.some(word => content.includes(word));
 
-  // منع الروابط والشتائم (ما عدا الإدارة)
   if ((hasLink || hasBadWord) && !message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-    await message.delete().catch(() => {});
-    const warning = await message.channel.send(`⚠️ ممنوع الروابط أو الكلمات السيئة يا ${message.author}!`);
-    setTimeout(() => warning.delete().catch(() => {}), 3000);
-    return;
+    if (message.channel.id !== AD_CHANNEL_ID) { // استثناء قناة الإعلانات من منع الروابط
+        await message.delete().catch(() => {});
+        const warning = await message.channel.send(`⚠️ ممنوع الروابط أو الكلمات السيئة يا ${message.author}!`);
+        setTimeout(() => warning.delete().catch(() => {}), 3000);
+    }
   }
 });
 
@@ -75,40 +71,44 @@ client.on('guildMemberAdd', async (member) => {
   updateLiveInfo(member.guild);
 });
 
-// --- نظام الإعلانات الذكي (المسح بعد 15 دقيقة) ---
+// --- نظام الإعلانات المحدث (نصوصك الخاصة) ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
-  // إعلان 1: كل 30 دقيقة
+  // الإعلان الأول (كل 30 دقيقة - يمسح بعد 15 دقيقة)
   setInterval(async () => {
     if (ad1Msg) await ad1Msg.delete().catch(() => {});
-    ad1Msg = await channel.send(`If you want to make totem about onwe skin...\nAsk <@1480631975697055754>`);
+    const text1 = `If you want to make totem about onwe skin or picture about onwe skin.
+Ask <@1480631975697055754>
+
+You will receive your request in there
+https://discord.com/channels/1482874760940486699/1484397891693969601`;
+    ad1Msg = await channel.send(text1);
     setTimeout(() => { if (ad1Msg) ad1Msg.delete().catch(() => {}); ad1Msg = null; }, 15 * 60 * 1000);
   }, 30 * 60 * 1000);
 
-  // إعلان 2: كل ساعتين
+  // الإعلان الثاني (كل ساعتين - يمسح بعد 15 دقيقة)
   setInterval(async () => {
     if (ad2Msg) await ad2Msg.delete().catch(() => {});
-    ad2Msg = await channel.send(`All the news about the server is there!\nhttps://discord.com/channels/1482874760940486699/1482934834899714048`);
+    const text2 = `All the news about the server is there
+https://discord.com/channels/1482874760940486699/1482934834899714048`;
+    ad2Msg = await channel.send(text2);
     setTimeout(() => { if (ad2Msg) ad2Msg.delete().catch(() => {}); ad2Msg = null; }, 15 * 60 * 1000);
   }, 120 * 60 * 1000);
+
+  // الإعلان الثالث (كل ساعة - يمسح بعد 15 دقيقة)
+  setInterval(async () => {
+    if (ad3Msg) await ad3Msg.delete().catch(() => {});
+    const text3 = `If you need to edit or make any texture pack.
+You can click on here
+https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
+    ad3Msg = await channel.send(text3);
+    setTimeout(() => { if (ad3Msg) ad3Msg.delete().catch(() => {}); ad3Msg = null; }, 15 * 60 * 1000);
+  }, 60 * 60 * 1000);
 }
 
-// --- التعامل مع أوامر السلاش ---
-client.on('interactionCreate', async (int) => {
-  if (!int.isChatInputCommand()) return;
-  if (!int.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return int.reply({ content: 'للإدارة فقط!', ephemeral: true });
-
-  if (int.commandName === 'clear') {
-    const amt = int.options.getInteger('amount');
-    await int.channel.bulkDelete(Math.min(amt, 100));
-    await int.reply({ content: `✅ تم مسح ${amt} رسالة.`, ephemeral: true });
-  }
-  // (بقية الأوامر بنفس المنطق: mute, kick, ban)
-});
-
-// --- تحديث Live Info ---
+// --- Live Info ---
 async function updateLiveInfo(guild) {
   if (!guild) guild = client.guilds.cache.first();
   const channel = client.channels.cache.get(INFO_CHANNEL_ID);
