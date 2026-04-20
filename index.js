@@ -20,7 +20,7 @@ const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
 
-// قائمة الكلمات الممنوعة (تقدر تزود عليها)
+// قائمة الكلمات الممنوعة
 const badWords = ['شتيمة1', 'شتيمة2', 'fuck', 'bitch', 'ass', 'sharmout'];
 
 let ad1Msg = null, ad2Msg = null, ad3Msg = null;
@@ -57,7 +57,6 @@ client.on('messageCreate', async (message) => {
   const hasLink = /(https?:\/\/[^\s]+)/g.test(content);
   const hasBadWord = badWords.some(word => content.includes(word));
 
-  // منع الروابط والشتائم (ما عدا الإدارة وقناة الإعلانات)
   if ((hasLink || hasBadWord) && !message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
     if (message.channel.id !== AD_CHANNEL_ID) {
       await message.delete().catch(() => {});
@@ -81,16 +80,13 @@ client.on('guildMemberAdd', async (member) => {
   updateLiveInfo(member.guild);
 });
 
-// --- التعامل مع الأوامر (Interaction) ---
+// --- التعامل مع الأوامر (Interaction Create) ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const { commandName, options, guild } = interaction;
 
-  // رد سريع عشان تطبيق "The application did not respond" ما يظهرش
-  if (commandName === 'ping') {
-    await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
-  }
+  if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
 
   if (commandName === 'server') {
     const embed = new EmbedBuilder()
@@ -107,7 +103,6 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'clear') {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) 
       return interaction.reply({ content: 'ماعندك صلاحية!', ephemeral: true });
-    
     const amount = options.getInteger('amount');
     await interaction.channel.bulkDelete(Math.min(amount, 100), true);
     await interaction.reply({ content: `✅ تم مسح ${amount} رسالة بنجاح.`, ephemeral: true });
@@ -138,18 +133,41 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// --- نظام الإعلانات (30 min - delete after 15 min) ---
+// --- نظام الإعلانات المحدث (نصوص سيف الجديدة) ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
+  // Advertisement 1: كل 30 دقيقة
   setInterval(async () => {
     if (ad1Msg) await ad1Msg.delete().catch(() => {});
-    ad1Msg = await channel.send(`If you want to make totem about onwe skin or picture about onwe skin.
+    const text1 = `Advertisement 1: If you want to make totem about onwe skin or picture about onwe skin.
 Ask <@1480631975697055754>
-https://discord.com/channels/1482874760940486699/1484397891693969601`);
+
+You will receive your request in there!
+https://discord.com/channels/1482874760940486699/1484397891693969601`;
+    ad1Msg = await channel.send(text1);
     setTimeout(() => { if (ad1Msg) ad1Msg.delete().catch(() => {}); ad1Msg = null; }, 15 * 60 * 1000);
   }, 30 * 60 * 1000);
+
+  // Advertisement 2: كل ساعة واحدة (60 دقيقة)
+  setInterval(async () => {
+    if (ad2Msg) await ad2Msg.delete().catch(() => {});
+    const text2 = `Advertisement 2: All the news about the server is there!
+https://discord.com/channels/1482874760940486699/1482934834899714048`;
+    ad2Msg = await channel.send(text2);
+    setTimeout(() => { if (ad2Msg) ad2Msg.delete().catch(() => {}); ad2Msg = null; }, 15 * 60 * 1000);
+  }, 60 * 60 * 1000);
+
+  // Advertisement 3: كل ساعة ونصف (90 دقيقة)
+  setInterval(async () => {
+    if (ad3Msg) await ad3Msg.delete().catch(() => {});
+    const text3 = `Advertisement 3: If you need to edit or make any texture pack.
+You can click on here
+https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
+    ad3Msg = await channel.send(text3);
+    setTimeout(() => { if (ad3Msg) ad3Msg.delete().catch(() => {}); ad3Msg = null; }, 15 * 60 * 1000);
+  }, 90 * 60 * 1000);
 }
 
 async function updateLiveInfo(guild) {
