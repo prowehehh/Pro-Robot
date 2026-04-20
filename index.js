@@ -21,8 +21,6 @@ const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
 
 let ad1Msg = null;
-let ad2Msg = null;
-let ad3Msg = null;
 
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة البوت'),
@@ -79,44 +77,41 @@ Go to read the rules and information:
   updateLiveInfo(member.guild);
 });
 
-// --- نظام الإعلانات بنصوص سيف المحددة ---
+// --- نظام الإعلانات (Ad 1 فقط بالنص الجديد) ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
-  // إعلان 1: كل 30 دقيقة
+  // الإعلان يظهر كل 30 دقيقة
   setInterval(async () => {
+    // مسح الرسالة القديمة إذا كانت موجودة قبل إرسال الجديدة
     if (ad1Msg) await ad1Msg.delete().catch(() => {});
-    const ad1Text = `If you want to make totem about onwe skin or picture about onwe skin.
+    
+    const ad1Text = `→ If you want to make totem about onwe skin or picture about onwe skin.
 Ask @Dream234
-
-You will receive your request in there
-https://discord.com/channels/1482874760940486699/1484397891693969601`;
-    ad1Msg = await channel.send(ad1Text);
-    setTimeout(async () => { if (ad1Msg) { await ad1Msg.delete().catch(() => {}); ad1Msg = null; } }, 15 * 60 * 1000);
-  }, 30 * 60 * 1000);
-
-  // إعلان 2: كل ساعة (60 دقيقة)
-  setInterval(async () => {
-    if (ad2Msg) await ad2Msg.delete().catch(() => {});
-    const ad2Text = `All the news about the server is there
-https://discord.com/channels/1482874760940486699/1482934834899714048`;
-    ad2Msg = await channel.send(ad2Text);
-    setTimeout(async () => { if (ad2Msg) { await ad2Msg.delete().catch(() => {}); ad2Msg = null; } }, 15 * 60 * 1000);
-  }, 60 * 60 * 1000);
-
-  // إعلان 3: كل ساعة ونصف (90 دقيقة)
-  setInterval(async () => {
-    if (ad3Msg) await ad3Msg.delete().catch(() => {});
-    const ad3Text = `If you need to edit or make any texture pack.
-You can click on here
+→ You will receive your request in there!
+https://discord.com/channels/1482874760940486699/1484397891693969601
+================================
+- All the news about the server is there!
+https://discord.com/channels/1482874760940486699/1482934834899714048
+================================
+- If you need to edit or make any texture pack.
+You can click on here!
 https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
-    ad3Msg = await channel.send(ad3Text);
-    setTimeout(async () => { if (ad3Msg) { await ad3Msg.delete().catch(() => {}); ad3Msg = null; } }, 15 * 60 * 1000);
-  }, 90 * 60 * 1000);
+
+    ad1Msg = await channel.send(ad1Text);
+
+    // مسح الرسالة بعد 15 دقيقة
+    setTimeout(async () => {
+      if (ad1Msg) {
+        await ad1Msg.delete().catch(() => {});
+        ad1Msg = null;
+      }
+    }, 15 * 60 * 1000);
+  }, 30 * 60 * 1000);
 }
 
-// --- الأوامر المساعدة ---
+// --- تنفيذ الأوامر ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName, options, guild } = interaction;
