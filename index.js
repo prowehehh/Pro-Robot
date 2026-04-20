@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Rout
 const express = require('express');
 const app = express();
 
-// تشغيل السيرفر لضمان بقاء البوت متصلاً 24 ساعة
+// تشغيل السيرفر لضمان بقاء البوت متصلاً
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🚀'));
 app.listen(3000, () => console.log('Server is ready!'));
 
@@ -15,42 +15,64 @@ const client = new Client({
   ],
 });
 
-// --- إعدادات الأيدي (IDs) المراجعة ---
+// --- إعدادات الأيدي (IDs) ---
 const WELCOME_CHANNEL_ID = '1482881348204101768';
 const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
+const XBOX_CHANNEL_ID = '1482937156258496733'; // قناة تغيير الاسم
 
-// --- تعريف الأوامر (Slash Commands) ---
-const commands = [
-  new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة اتصال البوت'),
-  new SlashCommandBuilder().setName('info').setDescription('تحديث معلومات السيرفر يدوياً'),
-  new SlashCommandBuilder().setName('server').setDescription('عرض تفاصيل ومعلومات السيرفر'),
-  new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت جديد').addStringOption(opt => opt.setName('question').setDescription('سؤال التصويت').setRequired(true)),
-  new SlashCommandBuilder().setName('clear').setDescription('مسح عدد معين من الرسائل').addIntegerOption(opt => opt.setName('amount').setDescription('عدد الرسائل').setRequired(true)),
-  new SlashCommandBuilder().setName('mute').setDescription('إسكات عضو (Timeout)').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)).addIntegerOption(opt => opt.setName('duration').setDescription('المدة بالدقائق').setRequired(true)),
-  new SlashCommandBuilder().setName('unmute').setDescription('فك الإسكات عن عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
-  new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
-  new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
-].map(command => command.toJSON());
+// متغيرات الأنظمة
+let ad1Msg = null, ad2Msg = null, ad3Msg = null;
+let originalNames = new Map(); // لحفظ الأسماء الأصلية
 
 client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  client.user.setActivity('/help', { type: 3 }); // Watching /help
   
-  // حالة البوت (Watching /help)
-  client.user.setActivity('/help', { type: 3 }); 
-
-  const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-  try {
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('Successfully registered all Slash Commands.');
-  } catch (error) { console.error(error); }
-
   updateLiveInfo();
   startAds();
 });
 
-// --- نظام الترحيب و الرتب التلقائية ---
+// --- نظام الاسم المؤقت (Xbox Name) مع مسح الرسالة ---
+client.on('messageCreate', async (message) => {
+  if (message.author.bot || !message.guild) return;
+
+  // 1. إذا كتب في قناة الـ Xbox
+  if (message.channel.id === XBOX_CHANNEL_ID) {
+    try {
+      if (!originalNames.has(message.author.id)) {
+        originalNames.set(message.author.id, message.member.displayName);
+      }
+
+      const newXboxName = message.content;
+      await message.member.setNickname(newXboxName);
+      
+      const reply = await message.reply(`✅ تم تفعيل اسم الـ Xbox: **${newXboxName}** (سيتم مسح رسالتك الآن)`);
+      
+      // مسح رسالة العضو ورد البوت بعد 5 ثواني
+      setTimeout(() => {
+        message.delete().catch(() => {});
+        reply.delete().catch(() => {});
+      }, 5000);
+      
+    } catch (e) {
+      console.log("Error: " + e.message);
+    }
+    return; 
+  }
+
+  // 2. إذا كتب في أي قناة تانية نرجع اسمه لأصله
+  if (originalNames.has(message.author.id)) {
+    try {
+      const oldName = originalNames.get(message.author.id);
+      await message.member.setNickname(oldName);
+      originalNames.delete(message.author.id);
+    } catch (e) {}
+  }
+});
+
+// --- نظام الترحيب ---
 client.on('guildMemberAdd', async (member) => {
   try {
     const role = member.guild.roles.cache.get(MEMBER_ROLE_ID);
@@ -76,120 +98,55 @@ Go to read the rules and information:
 @everyone`;
     welcomeChannel.send(welcomeMsg);
   }
-  updateLiveInfo(member.guild);
 });
 
-client.on('guildMemberRemove', (member) => updateLiveInfo(member.guild));
-
-// --- نظام الإعلانات مع المسح التلقائي بعد 15 دقيقة ---
+// --- نظام الإعلانات الذكي ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
   // إعلان 1: كل 30 دقيقة
   setInterval(async () => {
+    if (ad1Msg) await ad1Msg.delete().catch(() => {});
     const ad1 = `If you want to make totem about onwe skin or picture about onwe skin.
 Ask <@1480631975697055754>
-
-You will receive your request in there
 https://discord.com/channels/1482874760940486699/1484397891693969601`;
-    
-    const sentMsg = await channel.send(ad1);
-    setTimeout(() => {
-      sentMsg.delete().catch(e => {});
-    }, 15 * 60 * 1000); // يمسح بعد 15 دقيقة
+    ad1Msg = await channel.send(ad1);
+    setTimeout(() => { if(ad1Msg) ad1Msg.delete().catch(() => {}); ad1Msg = null; }, 15 * 60 * 1000);
   }, 30 * 60 * 1000);
 
   // إعلان 2: كل ساعتين
   setInterval(async () => {
+    if (ad2Msg) await ad2Msg.delete().catch(() => {});
     const ad2 = `All the news about the server is there
 https://discord.com/channels/1482874760940486699/1482934834899714048`;
-    
-    const sentMsg = await channel.send(ad2);
-    setTimeout(() => {
-      sentMsg.delete().catch(e => {});
-    }, 15 * 60 * 1000); // يمسح بعد 15 دقيقة
+    ad2Msg = await channel.send(ad2);
+    setTimeout(() => { if(ad2Msg) ad2Msg.delete().catch(() => {}); ad2Msg = null; }, 15 * 60 * 1000);
   }, 120 * 60 * 1000);
 
   // إعلان 3: كل ساعة
   setInterval(async () => {
+    if (ad3Msg) await ad3Msg.delete().catch(() => {});
     const ad3 = `If you need to edit or make any texture pack.
 Click on here
 https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
-    
-    const sentMsg = await channel.send(ad3);
-    setTimeout(() => {
-      sentMsg.delete().catch(e => {});
-    }, 15 * 60 * 1000); // يمسح بعد 15 دقيقة
+    ad3Msg = await channel.send(ad3);
+    setTimeout(() => { if(ad3Msg) ad3Msg.delete().catch(() => {}); ad3Msg = null; }, 15 * 60 * 1000);
   }, 60 * 60 * 1000);
 }
-
-// --- التعامل مع أوامر السلاش ---
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-  const { commandName, options, guild, member } = interaction;
-
-  if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
-  
-  if (commandName === 'server') {
-    const embed = new EmbedBuilder()
-      .setColor('#f1c40f')
-      .setTitle(`📊 Server Info: ${guild.name}`)
-      .setThumbnail(guild.iconURL())
-      .addFields(
-        { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
-        { name: '👥 Members', value: `${guild.memberCount}`, inline: true }
-      )
-      .setTimestamp();
-    await interaction.reply({ embeds: [embed] });
-  }
-
-  if (commandName === 'clear') {
-    if (!member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return interaction.reply({ content: '⚠️ للإدارة فقط!', ephemeral: true });
-    const amount = options.getInteger('amount');
-    await interaction.channel.bulkDelete(Math.min(amount, 100));
-    await interaction.reply({ content: `✅ تم مسح ${amount} رسالة.`, ephemeral: true });
-  }
-
-  if (commandName === 'info') {
-    updateLiveInfo(guild);
-    await interaction.reply({ content: 'تم تحديث البيانات!', ephemeral: true });
-  }
-
-  if (commandName === 'mute') {
-    const target = options.getMember('target');
-    const time = options.getInteger('duration');
-    await target.timeout(time * 60 * 1000);
-    await interaction.reply(`🔇 Done.`);
-  }
-  if (commandName === 'kick') { await options.getMember('target').kick(); await interaction.reply(`👢 Done.`); }
-  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')); await interaction.reply(`🚫 Done.`); }
-});
 
 // --- تحديث معلومات السيرفر المباشرة ---
 async function updateLiveInfo(guild) {
   if (!guild) guild = client.guilds.cache.first();
   const channel = client.channels.cache.get(INFO_CHANNEL_ID);
   if (!channel || !guild) return;
-
   const createdAt = guild.createdAt.toLocaleDateString('en-GB'); 
-  const info = `@everyone
-[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]
-Information about server:-
-• Onwer: <@1134146616857731173>
-• Robot: <@1495419259147386920>
-• Server from: Egypt
-• Date Server: ${createdAt}
-• Total Members: ${guild.memberCount}
-• Ranks:
-→ [Member, Ultimate, YouTube, Helper, Vip]
-[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
-
+  const info = `@everyone\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Onwer: <@1134146616857731173>\n• Robot: <@1495419259147386920>\n• Server from: Egypt\n• Date Server: ${createdAt}\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [Member, Ultimate, YouTube, Helper, Vip]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
   try {
-    const messages = await channel.messages.fetch({ limit: 10 });
-    const botMsg = messages.find(m => m.author.id === client.user.id);
+    const msgs = await channel.messages.fetch({ limit: 10 });
+    const botMsg = msgs.find(m => m.author.id === client.user.id);
     if (botMsg) await botMsg.edit(info); else await channel.send(info);
-  } catch (error) {}
+  } catch (e) {}
 }
 
 client.login(process.env.TOKEN);
