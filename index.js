@@ -20,16 +20,20 @@ const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
 
-let ad1Msg = null, ad2Msg = null, ad3Msg = null;
+let ad1Msg = null;
+let ad2Msg = null;
+let ad3Msg = null;
 
-// --- تعريف الأوامر (الأساسية + المهام) ---
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة البوت'),
   new SlashCommandBuilder().setName('info').setDescription('تحديث معلومات السيرفر يدوياً'),
-  new SlashCommandBuilder().setName('todo')
-    .setDescription('إضافة مهمة لقائمة المهام الخاصة بك')
-    .addStringOption(opt => opt.setName('task').setDescription('المهمة التي تريد إضافتها').setRequired(true)),
+  new SlashCommandBuilder().setName('server').setDescription('عرض معلومات السيرفر'),
+  new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت').addStringOption(opt => opt.setName('question').setDescription('السؤال').setRequired(true)),
   new SlashCommandBuilder().setName('clear').setDescription('مسح رسائل').addIntegerOption(opt => opt.setName('amount').setDescription('العدد').setRequired(true)),
+  new SlashCommandBuilder().setName('mute').setDescription('إسكات عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)).addIntegerOption(opt => opt.setName('duration').setDescription('بالدقائق').setRequired(true)),
+  new SlashCommandBuilder().setName('unmute').setDescription('فك إسكات').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
+  new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
+  new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
 ].map(command => command.toJSON());
 
 client.on('ready', async () => {
@@ -46,7 +50,7 @@ client.on('ready', async () => {
   startAds();
 });
 
-// --- نظام الترحيب (نفس نصّك بالظبط) ---
+// --- نظام الترحيب ---
 client.on('guildMemberAdd', async (member) => {
   try {
     const role = member.guild.roles.cache.get(MEMBER_ROLE_ID);
@@ -75,56 +79,63 @@ Go to read the rules and information:
   updateLiveInfo(member.guild);
 });
 
-// --- نظام الإعلانات بنصوص سيف (بدون تعديل) ---
+// --- نظام الإعلانات بنصوص سيف المحددة ---
 function startAds() {
   const channel = client.channels.cache.get(AD_CHANNEL_ID);
   if (!channel) return;
 
-  const sendAd = async (text, adVar) => {
-    const msg = await channel.send(text);
-    setTimeout(() => msg.delete().catch(() => {}), 15 * 60 * 1000); // مسح بعد 15 دقيقة
-  };
-
-  const ad1Text = `If you want to make totem about onwe skin or picture about onwe skin.
+  // إعلان 1: كل 30 دقيقة
+  setInterval(async () => {
+    if (ad1Msg) await ad1Msg.delete().catch(() => {});
+    const ad1Text = `If you want to make totem about onwe skin or picture about onwe skin.
 Ask @Dream234
 
 You will receive your request in there
 https://discord.com/channels/1482874760940486699/1484397891693969601`;
+    ad1Msg = await channel.send(ad1Text);
+    setTimeout(async () => { if (ad1Msg) { await ad1Msg.delete().catch(() => {}); ad1Msg = null; } }, 15 * 60 * 1000);
+  }, 30 * 60 * 1000);
 
-  const ad2Text = `All the news about the server is there
+  // إعلان 2: كل ساعة (60 دقيقة)
+  setInterval(async () => {
+    if (ad2Msg) await ad2Msg.delete().catch(() => {});
+    const ad2Text = `All the news about the server is there
 https://discord.com/channels/1482874760940486699/1482934834899714048`;
+    ad2Msg = await channel.send(ad2Text);
+    setTimeout(async () => { if (ad2Msg) { await ad2Msg.delete().catch(() => {}); ad2Msg = null; } }, 15 * 60 * 1000);
+  }, 60 * 60 * 1000);
 
-  const ad3Text = `If you need to edit or make any texture pack.
+  // إعلان 3: كل ساعة ونصف (90 دقيقة)
+  setInterval(async () => {
+    if (ad3Msg) await ad3Msg.delete().catch(() => {});
+    const ad3Text = `If you need to edit or make any texture pack.
 You can click on here
 https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
-
-  setInterval(() => sendAd(ad1Text), 30 * 60 * 1000);
-  setInterval(() => sendAd(ad2Text), 60 * 60 * 1000);
-  setInterval(() => sendAd(ad3Text), 90 * 60 * 1000);
+    ad3Msg = await channel.send(ad3Text);
+    setTimeout(async () => { if (ad3Msg) { await ad3Msg.delete().catch(() => {}); ad3Msg = null; } }, 15 * 60 * 1000);
+  }, 90 * 60 * 1000);
 }
 
-// --- تنفيذ الأوامر ---
+// --- الأوامر المساعدة ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName, options, guild, user } = interaction;
-
-  if (commandName === 'todo') {
-    const task = options.getString('task');
-    const embed = new EmbedBuilder()
-      .setTitle('📝 قائمة مهام جديدة')
-      .setDescription(`صاحب المهمة: ${user}\n\n**المهمة:**\n${task}`)
-      .setColor('#FFA500')
-      .setTimestamp();
-    await interaction.reply({ embeds: [embed] });
-  }
+  const { commandName, options, guild } = interaction;
 
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
   if (commandName === 'clear') {
     const amount = options.getInteger('amount');
-    await interaction.channel.bulkDelete(Math.min(amount, 100)).catch(() => {});
+    await interaction.channel.bulkDelete(Math.min(amount, 100));
     await interaction.reply({ content: `✅ Done.`, ephemeral: true });
   }
   if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'Updated!', ephemeral: true }); }
+  if (commandName === 'mute') {
+    const target = options.getMember('target');
+    const time = options.getInteger('duration');
+    await target.timeout(time * 60 * 1000);
+    await interaction.reply(`🔇 Done.`);
+  }
+  if (commandName === 'kick') { await options.getMember('target').kick(); await interaction.reply(`👢 Done.`); }
+  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')); await interaction.reply(`🚫 Done.`); }
 });
 
 async function updateLiveInfo(guild) {
