@@ -43,7 +43,7 @@ client.on('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   try {
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('✅ تم تحديث جميع الأوامر بنجاح');
+    console.log('✅ All commands were successfully updated!');
   } catch (error) { console.error(error); }
 
   updateLiveInfo();
@@ -64,10 +64,10 @@ client.on('interactionCreate', async interaction => {
       .setTitle(`Information Server: ${guild.name}`)
       .setThumbnail(guild.iconURL())
       .addFields(
-        { name: '👑 Onwer Server:', value: `<@${guild.ownerId}>`, inline: true },
-        { name: '👥 Number of Members:', value: `${guild.memberCount}`, inline: true },
-        { name: '🌍 Location:', value: `Egypt`, inline: true },
-        { name: '📅 Date:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
+        { name: 'Onwer Server 👑:', value: `<@${guild.ownerId}>`, inline: true },
+        { name: 'Number of Members 👥:', value: `${guild.memberCount}`, inline: true },
+        { name: 'Location 🌍:', value: `Egypt`, inline: true },
+        { name: 'Date 📅:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
       )
       .setColor('#f1c40f');
     await interaction.reply({ embeds: [serverEmbed] });
@@ -77,7 +77,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'vote') {
     const question = options.getString('question');
     const voteEmbed = new EmbedBuilder()
-      .setTitle('📊 تصويت جديد')
+      .setTitle('New Vote! 🗳')
       .setDescription(question)
       .setFooter({ text: `بواسطة: ${interaction.user.username}` })
       .setColor('#3498db')
@@ -92,7 +92,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'clear') {
     const amount = options.getInteger('amount');
     await channel.bulkDelete(Math.min(amount, 100)).catch(() => {});
-    await interaction.reply({ content: `✅ تم مسح ${amount} رسالة.`, ephemeral: true });
+    await interaction.reply({ content: `Messages ${amount} deleted! ✅️`, ephemeral: true });
   }
 
   // 5. أمر Mute
@@ -100,20 +100,20 @@ client.on('interactionCreate', async interaction => {
     const target = options.getMember('target');
     const time = options.getInteger('duration');
     await target.timeout(time * 60 * 1000).catch(() => {});
-    await interaction.reply(`🔇 تم إسكات ${target} لمدة ${time} دقيقة.`);
+    await interaction.reply(`Silenced ${target} For the ${time} Minutes! 🔇`);
   }
 
   // 6. أمر Unmute
   if (commandName === 'unmute') {
     const target = options.getMember('target');
     await target.timeout(null).catch(() => {});
-    await interaction.reply(`🔊 تم فك الإسكات عن ${target}.`);
+    await interaction.reply(`Unmuted! 🔈 ${target}`);
   }
 
   // 7. باقي أوامر الإدارة
-  if (commandName === 'kick') { await options.getMember('target').kick().catch(() => {}); await interaction.reply(`👢 تم طرد العضو.`); }
-  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')).catch(() => {}); await interaction.reply(`🚫 تم حظر العضو.`); }
-  if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'تم تحديث الروم بنجاح!', ephemeral: true }); }
+  if (commandName === 'kick') { await options.getMember('target').kick().catch(() => {}); await interaction.reply(`The member has been kicked! 🦶`); }
+  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')).catch(() => {}); await interaction.reply(`The member has been banned! 🚫`); }
+  if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'The information has been updated! ✅️', ephemeral: true }); }
 });
 
 client.on('guildMemberAdd', async (member) => {
