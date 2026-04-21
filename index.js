@@ -59,13 +59,13 @@ client.on('interactionCreate', async interaction => {
   // 2. أمر Server (الجديد)
   if (commandName === 'server') {
     const serverEmbed = new EmbedBuilder()
-      .setTitle(`معلومات سيرفر: ${guild.name}`)
+      .setTitle('Information Server: ${guild.name}`)
       .setThumbnail(guild.iconURL())
       .addFields(
-        { name: '👑 صاحب السيرفر:', value: `<@${guild.ownerId}>`, inline: true },
-        { name: '👥 عدد الأعضاء:', value: `${guild.memberCount}`, inline: true },
-        { name: '🌍 الموقع:', value: `Egypt 🇪🇬`, inline: true },
-        { name: '📅 تاريخ الإنشاء:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
+        { name: '👑 Onwer server:', value: `<@${guild.ownerId}>`, inline: true },
+        { name: '👥 Number Members:', value: `${guild.memberCount}`, inline: true },
+        { name: '🌍 Location:', value: `Egypt`, inline: true },
+        { name: '📅 Date:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
       )
       .setColor('#f1c40f');
     await interaction.reply({ embeds: [serverEmbed] });
@@ -152,8 +152,7 @@ Go to read the rules and information:
     setInterval(async () => {
       if (ad1Msg) await ad1Msg.delete().catch(() => {});
       
-      const adContent = `If you want to make totem about onwe skin or picture about onwe skin.
-Ask @Dream234
+      const adContent = `If you want to make totem about onwe skin or picture about onwe skin. Ask @Dream234
 → You will receive your request in there!
 https://discord.com/channels/1482874760940486699/1484397891693969601
 ================================
@@ -161,8 +160,8 @@ https://discord.com/channels/1482874760940486699/1484397891693969601
 https://discord.com/channels/1482874760940486699/1482934834899714048
 ================================
 - If you need to edit or make any texture pack.
-You can click on here!
-https://discord.com/channels/1482874760940486699/1482936392479936645 to request!`;
+→ You can click on here to get request!
+https://discord.com/channels/1482874760940486699/1482936392479936645`;
       
       ad1Msg = await channel.send(adContent);
   
@@ -181,7 +180,7 @@ https://discord.com/channels/1482874760940486699/1482936392479936645 to request!
     const channel = client.channels.cache.get(INFO_CHANNEL_ID);
     if (!channel || !guild) return;
     const createdAt = guild.createdAt.toLocaleDateString('en-GB');
-    const info = `@everyone\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Onwer: <@1134146616857731173>\n• Robot: <@1495419259147386920>\n• Server from: Egypt\n• Date Server: ${createdAt}\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [Member, Ultimate, YouTube, Helper, Vip]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
+    const info = `@everyone\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Onwer: <@1134146616857731173>\n• Robot: <@1495419259147386920>\n• Server from: Egypt\n• Date Server: ${createdAt}\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [<@&1482883802186514615>, <@&1486093106465210531>, <@&1482884804063268984>, <@&1482885169949052948>, <@&1482885029557178592>]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
     try {
       const msgs = await channel.messages.fetch({ limit: 10 });
       const botMsg = msgs.find(m => m.author.id === client.user.id);
