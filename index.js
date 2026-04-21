@@ -58,7 +58,7 @@ client.on('interactionCreate', async interaction => {
   // 1. أمر Ping
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
 
-  // 2. أمر Server (تم تصحيح علامات التنصيص هنا)
+  // 2. أمر Server
   if (commandName === 'server') {
     const serverEmbed = new EmbedBuilder()
       .setTitle(`Information Server: ${guild.name}`)
@@ -139,7 +139,14 @@ Go to read the rules and information:
 ● https://discord.com/channels/1482874760940486699/1482901664951304222 ● https://discord.com/channels/1482874760940486699/1484639863411183636
 ============================
 @everyone`;
-      welcomeChannel.send(welcomeMsg).catch(() => {});
+      
+      // إرسال الرسالة وتحديد وقت المسح (24 ساعة)
+      const sentMsg = await welcomeChannel.send(welcomeMsg).catch(() => {});
+      if (sentMsg) {
+          setTimeout(async () => {
+              await sentMsg.delete().catch(() => {});
+          }, 86400000); // 86400000 مللي ثانية = 24 ساعة
+      }
     }
     updateLiveInfo(member.guild);
   });
