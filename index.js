@@ -43,7 +43,7 @@ client.on('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   try {
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('✅ All commands were successfully updated!');
+    console.log('All commands were successfully updated! ✅️');
   } catch (error) { console.error(error); }
 
   updateLiveInfo();
