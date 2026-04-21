@@ -59,7 +59,7 @@ client.on('interactionCreate', async interaction => {
   // 2. أمر Server (الجديد)
   if (commandName === 'server') {
     const serverEmbed = new EmbedBuilder()
-      .setTitle('Information Server: ${guild.name}`)
+      .setTitle('Information Server': ${guild.name}`)
       .setThumbnail(guild.iconURL())
       .addFields(
         { name: '👑 Onwer server:', value: `<@${guild.ownerId}>`, inline: true },
