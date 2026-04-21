@@ -64,10 +64,10 @@ client.on('interactionCreate', async interaction => {
       .setTitle(`Information Server: ${guild.name}`)
       .setThumbnail(guild.iconURL())
       .addFields(
-        { name: 'Onwer Server 👑:', value: `<@${guild.ownerId}>`, inline: true },
-        { name: 'Number of Members 👥:', value: `${guild.memberCount}`, inline: true },
-        { name: 'Location 🌍:', value: `Egypt`, inline: true },
-        { name: 'Date 📅:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
+        { name: '👑 Onwer Server:', value: `<@${guild.ownerId}>`, inline: true },
+        { name: '👥 Number of Members:', value: `${guild.memberCount}`, inline: true },
+        { name: '🌍 Location:', value: `Egypt`, inline: true },
+        { name: '📅 Date:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
       )
       .setColor('#f1c40f');
     await interaction.reply({ embeds: [serverEmbed] });
