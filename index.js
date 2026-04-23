@@ -25,21 +25,15 @@ const CONFIG = {
     BOT_ID: '1495419259147386920'
 };
 
-// --- نظام الحماية الذكي ---
-// القائمة دي شاملة لأغلب الكلمات الممنوعة (عربي، إنجليزي، وفرانكو)
 const badWordsPattern = [
-    // شتائم عربية عامة (مكتوبة بنمط Regex لزيادة القوة)
     /كسم/i, /متناك/i, /شرموط/i, /خول/i, /عرص/i, /يا بن ال/i, /كس اخت/i, /زبي/i, /لبوة/i, /قحبة/i, /وسخ/i,
-    // شتائم إنجليزية
     /fuck/i, /shit/i, /bitch/i, /asshole/i, /dick/i, /pussy/i, /bastard/i,
-    // فرانكو وألفاظ إضافية
     /ksm/i, /sharmot/i, /mnotak/i, /7waal/i, /ya bnl/i, /fack/i
 ];
 
 const userViolations = new Map();
 const adsStorage = new Map();
 
-// --- بقية الأوامر كما هي ---
 const commands = [
     new SlashCommandBuilder().setName('ping').setDescription('Check bot speed'),
     new SlashCommandBuilder().setName('clear').setDescription('Clean chat').addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
@@ -59,6 +53,10 @@ const commands = [
         .addIntegerOption(o => o.setName('delete').setDescription('Delete after X minutes').setRequired(true))
         .addStringOption(o => o.setName('style').setDescription('Box or Normal').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
     new SlashCommandBuilder().setName('ads_stop').setDescription('Stop an ad').addStringOption(o => o.setName('name').setDescription('Ad Name').setRequired(true)),
+    // الأمر الجديد لتعديل الإعلان
+    new SlashCommandBuilder().setName('ads_edit').setDescription('Edit an active ad text')
+        .addStringOption(o => o.setName('name').setDescription('Ad Name').setRequired(true))
+        .addStringOption(o => o.setName('new_text').setDescription('New Ad Content').setRequired(true)),
 ].map(c => c.toJSON());
 
 function startAdLoop(adName, guildId) {
@@ -96,28 +94,19 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// --- معالجة الرسائل ونظام الحماية المطور ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
-
-    // فحص المحتوى باستخدام قائمة الـ Regex
     const isBad = badWordsPattern.some(pattern => pattern.test(message.content));
-
     if (isBad) {
-        // حذف الرسالة فوراً
         await message.delete().catch(() => {});
-
         const count = (userViolations.get(message.author.id) || 0) + 1;
         userViolations.set(message.author.id, count);
-
         if (count >= 2) {
-            // كتم العضو لمدة 10 ساعات عند التكرار
-            await message.member.timeout(10 * 60 * 60 * 1000, 'التلفظ بكلمات بذيئة متكررة');
+            await message.member.timeout(10 * 60 * 60 * 1000, 'Bad words');
             message.channel.send({ content: `⚠️ <@${message.author.id}> تم إسكاتك لمدة 10 ساعات بسبب تكرار الشتائم.` });
             userViolations.delete(message.author.id);
         } else {
-            // تحذير بسيط للمرة الأولى
-            const warn = await message.channel.send({ content: `🚫 <@${message.author.id}>، ممنوع استخدام هذه الألفاظ في السيرفر!` });
+            const warn = await message.channel.send({ content: `🚫 <@${message.author.id}>، ممنوع استخدام هذه الألفاظ!` });
             setTimeout(() => warn.delete().catch(() => {}), 5000);
         }
     }
@@ -129,6 +118,37 @@ client.on('interactionCreate', async (interaction) => {
 
         if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
 
+        if (commandName === 'ads_set') {
+            const name = options.getString('name');
+            const adData = { name, text: options.getString('text'), channelId: options.getChannel('channel').id, interval: options.getInteger('interval'), deleteAfter: options.getInteger('delete'), style: options.getString('style'), timer: null, lastMsgId: null };
+            adsStorage.set(name, adData);
+            startAdLoop(name, guild.id);
+            await interaction.reply({ content: `✅ Ad **${name}** started.`, ephemeral: true });
+        }
+
+        if (commandName === 'ads_stop') {
+            const name = options.getString('name');
+            const ad = adsStorage.get(name);
+            if (ad) {
+                clearInterval(ad.timer);
+                adsStorage.delete(name);
+                await interaction.reply({ content: `🛑 Ad **${name}** stopped.`, ephemeral: true });
+            } else await interaction.reply({ content: "❌ Ad not found.", ephemeral: true });
+        }
+
+        // تنفيذ أمر التعديل الجديد
+        if (commandName === 'ads_edit') {
+            const name = options.getString('name');
+            const newText = options.getString('new_text');
+            const ad = adsStorage.get(name);
+            if (ad) {
+                ad.text = newText;
+                await interaction.reply({ content: `✅ Ad **${name}** text updated successfully!`, ephemeral: true });
+            } else {
+                await interaction.reply({ content: `❌ No active ad found with the name **${name}**.`, ephemeral: true });
+            }
+        }
+
         if (commandName === 'vote') {
             const q = options.getString('question');
             const row = new ActionRowBuilder().addComponents(
@@ -137,14 +157,6 @@ client.on('interactionCreate', async (interaction) => {
             );
             const embed = new EmbedBuilder().setTitle('Vote').setDescription(q).setColor('#f1c40f').setFooter({ text: `By: ${member.user.username}` });
             await interaction.reply({ embeds: [embed], components: [row] });
-        }
-
-        if (commandName === 'ads_set') {
-            const name = options.getString('name');
-            const adData = { name, text: options.getString('text'), channelId: options.getChannel('channel').id, interval: options.getInteger('interval'), deleteAfter: options.getInteger('delete'), style: options.getString('style'), timer: null, lastMsgId: null };
-            adsStorage.set(name, adData);
-            startAdLoop(name, guild.id);
-            await interaction.reply({ content: `✅ Ad **${name}** started.`, ephemeral: true });
         }
 
         if (commandName === 'send') {
@@ -174,7 +186,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ترحيب وتحديث معلومات السيرفر
 client.on('guildMemberAdd', async (member) => {
     const role = member.guild.roles.cache.get(CONFIG.AUTO_ROLE);
     if (role) await member.roles.add(role).catch(() => {});
