@@ -25,10 +25,21 @@ const CONFIG = {
     BOT_ID: '1495419259147386920'
 };
 
-const badWords = ['شتيمة1', 'شتيمة2']; 
+// --- نظام الحماية الذكي ---
+// القائمة دي شاملة لأغلب الكلمات الممنوعة (عربي، إنجليزي، وفرانكو)
+const badWordsPattern = [
+    // شتائم عربية عامة (مكتوبة بنمط Regex لزيادة القوة)
+    /كسم/i, /متناك/i, /شرموط/i, /خول/i, /عرص/i, /يا بن ال/i, /كس اخت/i, /زبي/i, /لبوة/i, /قحبة/i, /وسخ/i,
+    // شتائم إنجليزية
+    /fuck/i, /shit/i, /bitch/i, /asshole/i, /dick/i, /pussy/i, /bastard/i,
+    // فرانكو وألفاظ إضافية
+    /ksm/i, /sharmot/i, /mnotak/i, /7waal/i, /ya bnl/i, /fack/i
+];
+
 const userViolations = new Map();
 const adsStorage = new Map();
 
+// --- بقية الأوامر كما هي ---
 const commands = [
     new SlashCommandBuilder().setName('ping').setDescription('Check bot speed'),
     new SlashCommandBuilder().setName('clear').setDescription('Clean chat').addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
@@ -85,20 +96,28 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// نظام الحماية من الكلمات البذيئة
+// --- معالجة الرسائل ونظام الحماية المطور ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
-    const hasBadWord = badWords.some(word => message.content.toLowerCase().includes(word));
-    if (hasBadWord) {
+
+    // فحص المحتوى باستخدام قائمة الـ Regex
+    const isBad = badWordsPattern.some(pattern => pattern.test(message.content));
+
+    if (isBad) {
+        // حذف الرسالة فوراً
         await message.delete().catch(() => {});
+
         const count = (userViolations.get(message.author.id) || 0) + 1;
         userViolations.set(message.author.id, count);
+
         if (count >= 2) {
-            await message.member.timeout(10 * 60 * 60 * 1000, 'Bad words');
-            message.channel.send(`⚠️ <@${message.author.id}> has been muted for 10 hours.`);
+            // كتم العضو لمدة 10 ساعات عند التكرار
+            await message.member.timeout(10 * 60 * 60 * 1000, 'التلفظ بكلمات بذيئة متكررة');
+            message.channel.send({ content: `⚠️ <@${message.author.id}> تم إسكاتك لمدة 10 ساعات بسبب تكرار الشتائم.` });
             userViolations.delete(message.author.id);
         } else {
-            const warn = await message.channel.send(`🚫 <@${message.author.id}>, No bad words!`);
+            // تحذير بسيط للمرة الأولى
+            const warn = await message.channel.send({ content: `🚫 <@${message.author.id}>، ممنوع استخدام هذه الألفاظ في السيرفر!` });
             setTimeout(() => warn.delete().catch(() => {}), 5000);
         }
     }
@@ -148,8 +167,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: 'Done.', ephemeral: true });
         }
     } 
-    
-    // حل مشكلة "Interaction Failed" للأزرار
     else if (interaction.isButton()) {
         if (interaction.customId === 'v_yes' || interaction.customId === 'v_no') {
             await interaction.reply({ content: 'Thanks for voting! ✅', ephemeral: true });
@@ -157,6 +174,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// ترحيب وتحديث معلومات السيرفر
 client.on('guildMemberAdd', async (member) => {
     const role = member.guild.roles.cache.get(CONFIG.AUTO_ROLE);
     if (role) await member.roles.add(role).catch(() => {});
