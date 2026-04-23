@@ -33,7 +33,6 @@ const commands = [
   new SlashCommandBuilder().setName('unmute').setDescription('فك إسكات').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
-  // الأمر الجديد /send
   new SlashCommandBuilder()
     .setName('send')
     .setDescription('إرسال رسالة وحذفها بعد وقت معين')
@@ -61,22 +60,16 @@ client.on('interactionCreate', async interaction => {
 
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
 
-  // --- منطق أمر /send الجديد ---
   if (commandName === 'send') {
     const text = options.getString('message');
     const time = options.getInteger('time');
-
-    // إرسال الرسالة في الشات
     const sentMsg = await channel.send(text).catch(() => {});
-    
-    // الرد على المستخدم (رسالة مخفية) لتأكيد الإرسال
     await interaction.reply({ content: `✅ تم إرسال رسالتك بنجاح!`, ephemeral: true });
 
-    // إذا حددت وقت (أكبر من 0)، البوت هيمسحها
     if (time > 0 && sentMsg) {
       setTimeout(async () => {
         await sentMsg.delete().catch(() => {});
-      }, time * 60 * 1000); // تحويل الدقائق لملي ثانية
+      }, time * 60 * 1000);
     }
   }
 
@@ -141,6 +134,7 @@ client.on('guildMemberAdd', async (member) => {
     const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
     if (welcomeChannel) {
       const welcomeEmbed = new EmbedBuilder()
+        // هنا صورة العضو هتظهر فقط بجانب الاسم فوق (Author Icon)
         .setAuthor({ name: member.user.username, iconURL: member.user.displayAvatarURL() })
         .setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑
 [¡}================{!}================[¡}
@@ -151,7 +145,7 @@ client.on('guildMemberAdd', async (member) => {
 → <#1482874761951576228> | <#1484639863411183636>
 [¡}================{!}================[¡}
 Thank you! ❤️`)
-        .setThumbnail(member.user.displayAvatarURL())
+        // تم حذف سطر الـ setThumbnail لإزالة الصورة الجانبية الكبيرة
         .setColor('#00ff00')
         .setTimestamp();
 
