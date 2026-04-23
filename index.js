@@ -134,7 +134,6 @@ client.on('guildMemberAdd', async (member) => {
     const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
     if (welcomeChannel) {
       const welcomeEmbed = new EmbedBuilder()
-        // هنا صورة العضو هتظهر فقط بجانب الاسم فوق (Author Icon)
         .setAuthor({ name: member.user.username, iconURL: member.user.displayAvatarURL() })
         .setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑
 [¡}================{!}================[¡}
@@ -145,7 +144,6 @@ client.on('guildMemberAdd', async (member) => {
 → <#1482874761951576228> | <#1484639863411183636>
 [¡}================{!}================[¡}
 Thank you! ❤️ | From:@Pro King`)
-        // تم حذف سطر الـ setThumbnail لإزالة الصورة الجانبية الكبيرة
         .setColor('#00ff00')
         .setTimestamp();
 
@@ -168,18 +166,25 @@ Thank you! ❤️ | From:@Pro King`)
       try {
         if (ad1Msg) await ad1Msg.delete().catch(() => {});
         
-        const adContent = `If you want to make totem about onwe skin or picture about onwe skin. Ask @Dream234
+        const adEmbed = new EmbedBuilder()
+          .setTitle('📢 Server Advertisements')
+          .setDescription(`If you want to make totem about onwe skin or picture about onwe skin. Ask @Dream234
 → You will receive your request in there!
 https://discord.com/channels/1482874760940486699/1484397891693969601
+
 ================================
 - All the news about the server is there!
 https://discord.com/channels/1482874760940486699/1482934834899714048
+
 ================================
 - If you need to edit or make any texture pack.
 → You can click on here to get request!
-https://discord.com/channels/1482874760940486699/1482936392479936645`;
+https://discord.com/channels/1482874760940486699/1482936392479936645`)
+          .setColor('#3498db') // لون أزرق للمربع
+          .setFooter({ text: 'Pro Robot Ads System' })
+          .setTimestamp();
         
-        ad1Msg = await channel.send(adContent);
+        ad1Msg = await channel.send({ embeds: [adEmbed] });
     
         setTimeout(async () => {
           if (ad1Msg) {
