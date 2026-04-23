@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, REST, Routes, SlashCommandBuilder, ChannelType } = require('discord.js');
 const express = require('express');
 const app = express();
 
@@ -15,29 +15,54 @@ const client = new Client({
   ],
 });
 
-// --- إعدادات الأيدي (IDs) ---
+// --- إعدادات الأيدي (IDs) الثابتة ---
 const WELCOME_CHANNEL_ID = '1482881348204101768';
-const AD_CHANNEL_ID = '1482874761951576228';
 const INFO_CHANNEL_ID = '1484639863411183636';
 const MEMBER_ROLE_ID = '1482883802186514615';
 
-let ad1Msg = null;
+// متغيرات نظام الإعلانات الجديد
+let activeAdInterval = null;
+let currentAdMsg = null;
+let adConfig = {};
 
 const commands = [
-  new SlashCommandBuilder().setName('ping').setDescription('فحص سرعة البوت'),
-  new SlashCommandBuilder().setName('info').setDescription('تحديث معلومات السيرفر يدوياً'),
-  new SlashCommandBuilder().setName('server').setDescription('عرض معلومات السيرفر'),
-  new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت').addStringOption(opt => opt.setName('question').setDescription('السؤال').setRequired(true)),
-  new SlashCommandBuilder().setName('clear').setDescription('مسح رسائل').addIntegerOption(opt => opt.setName('amount').setDescription('العدد').setRequired(true)),
-  new SlashCommandBuilder().setName('mute').setDescription('إسكات عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)).addIntegerOption(opt => opt.setName('duration').setDescription('بالدقائق').setRequired(true)),
-  new SlashCommandBuilder().setName('unmute').setDescription('فك إسكات').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
-  new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
-  new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
+  new SlashCommandBuilder().setName('ping').setDescription('Check bot speed'),
+  new SlashCommandBuilder().setName('info').setDescription('Update server info manually'),
+  new SlashCommandBuilder().setName('server').setDescription('Show server information'),
+  new SlashCommandBuilder().setName('vote').setDescription('Create a vote').addStringOption(opt => opt.setName('question').setDescription('The question').setRequired(true)),
+  new SlashCommandBuilder().setName('clear').setDescription('Delete messages').addIntegerOption(opt => opt.setName('amount').setDescription('Amount').setRequired(true)),
+  new SlashCommandBuilder().setName('mute').setDescription('Mute a member').addUserOption(opt => opt.setName('target').setDescription('The member').setRequired(true)).addIntegerOption(opt => opt.setName('duration').setDescription('In minutes').setRequired(true)),
+  new SlashCommandBuilder().setName('unmute').setDescription('Unmute a member').addUserOption(opt => opt.setName('target').setDescription('The member').setRequired(true)),
+  new SlashCommandBuilder().setName('kick').setDescription('Kick a member').addUserOption(opt => opt.setName('target').setDescription('The member').setRequired(true)),
+  new SlashCommandBuilder().setName('ban').setDescription('Ban a member').addUserOption(opt => opt.setName('target').setDescription('The member').setRequired(true)),
+  
+  // أمر إعداد الإعلانات الجديد مع التحكم الكامل في القناة والشكل واللون
+  new SlashCommandBuilder()
+    .setName('ads_set')
+    .setDescription('Set a new auto advertisement')
+    .addStringOption(opt => opt.setName('name').setDescription('Ad name').setRequired(true))
+    .addStringOption(opt => opt.setName('text').setDescription('Ad message').setRequired(true))
+    .addChannelOption(opt => opt.setName('channel').setDescription('Select the channel').addChannelTypes(ChannelType.GuildText).setRequired(true))
+    .addStringOption(opt => opt.setName('style').setDescription('Choose style').setRequired(true)
+        .addChoices({ name: 'Box (Embed)', value: 'embed' }, { name: 'Normal Text', value: 'normal' }))
+    .addStringOption(opt => opt.setName('color').setDescription('Choose color (if Box)').setRequired(true)
+        .addChoices(
+            { name: 'Blue', value: '#3498db' },
+            { name: 'Green', value: '#2ecc71' },
+            { name: 'Red', value: '#e74c3c' },
+            { name: 'Yellow', value: '#f1c40f' },
+            { name: 'Black', value: '#000000' }
+        ))
+    .addIntegerOption(opt => opt.setName('interval').setDescription('Send every (minutes)').setRequired(true))
+    .addIntegerOption(opt => opt.setName('delete').setDescription('Delete after (minutes)').setRequired(true)),
+
+  new SlashCommandBuilder().setName('ads_stop').setDescription('Stop the current ad system'),
+
   new SlashCommandBuilder()
     .setName('send')
-    .setDescription('إرسال رسالة وحذفها بعد وقت معين')
-    .addStringOption(opt => opt.setName('message').setDescription('اكتب الرسالة هنا').setRequired(true))
-    .addIntegerOption(opt => opt.setName('time').setDescription('وقت المسح بالدقائق (0 يعني لا تمسح)').setRequired(true)),
+    .setDescription('Send a message and delete it after specific time')
+    .addStringOption(opt => opt.setName('message').setDescription('Your message').setRequired(true))
+    .addIntegerOption(opt => opt.setName('time').setDescription('Time to delete in minutes').setRequired(true)),
 ].map(command => command.toJSON());
 
 client.on('ready', async () => {
@@ -47,166 +72,163 @@ client.on('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   try {
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('All commands were successfully updated! ✅️');
+    console.log('All commands updated! ✅️');
   } catch (error) { console.error(error); }
 
   updateLiveInfo();
-  startAds();
 });
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName, options, guild, channel } = interaction;
+  const { commandName, options, guild, channel, member } = interaction;
+  const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
 
+  // --- نظام الإعلانات المطور ---
+  if (commandName === 'ads_set') {
+    if (!isAdmin) return interaction.reply({ content: "Sorry, this command is for Admins only! ❌", ephemeral: true });
+
+    // إيقاف أي إعلان شغال
+    if (activeAdInterval) clearInterval(activeAdInterval);
+
+    adConfig = {
+      name: options.getString('name'),
+      text: options.getString('text'),
+      channelId: options.getChannel('channel').id,
+      style: options.getString('style'),
+      color: options.getString('color'),
+      sendEvery: options.getInteger('interval'),
+      deleteAfter: options.getInteger('delete')
+    };
+
+    const startAdSystem = () => {
+      const targetChannel = client.channels.cache.get(adConfig.channelId);
+      if (!targetChannel) return;
+
+      activeAdInterval = setInterval(async () => {
+        if (currentAdMsg) await currentAdMsg.delete().catch(() => {});
+        
+        if (adConfig.style === 'embed') {
+          const adEmbed = new EmbedBuilder()
+            .setTitle(`📢 ${adConfig.name}`)
+            .setDescription(adConfig.text)
+            .setColor(adConfig.color)
+            .setFooter({ text: 'Auto Ad System' })
+            .setTimestamp();
+          currentAdMsg = await targetChannel.send({ embeds: [adEmbed] });
+        } else {
+          currentAdMsg = await targetChannel.send({ content: `**📢 ${adConfig.name}**\n\n${adConfig.text}` });
+        }
+
+        if (adConfig.deleteAfter > 0) {
+          setTimeout(async () => {
+            if (currentAdMsg) {
+              await currentAdMsg.delete().catch(() => {});
+              currentAdMsg = null;
+            }
+          }, adConfig.deleteAfter * 60 * 1000);
+        }
+      }, adConfig.sendEvery * 60 * 1000);
+    };
+
+    startAdSystem();
+    await interaction.reply({ content: `✅ Ad system started in <#${adConfig.channelId}>!`, ephemeral: true });
+  }
+
+  if (commandName === 'ads_stop') {
+    if (!isAdmin) return interaction.reply({ content: "Sorry, Admins only! ❌", ephemeral: true });
+    if (activeAdInterval) {
+      clearInterval(activeAdInterval);
+      activeAdInterval = null;
+      if (currentAdMsg) await currentAdMsg.delete().catch(() => {});
+      await interaction.reply({ content: "🛑 All auto ads have been stopped.", ephemeral: true });
+    } else {
+      await interaction.reply({ content: "No active ads to stop.", ephemeral: true });
+    }
+  }
+
+  // --- باقي الأوامر الإدارية بالإنجليزية ---
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
 
   if (commandName === 'send') {
     const text = options.getString('message');
     const time = options.getInteger('time');
     const sentMsg = await channel.send(text).catch(() => {});
-    await interaction.reply({ content: `Your message has been sent successfully! ✅`, ephemeral: true });
+    await interaction.reply({ content: `✅ Message sent successfully!`, ephemeral: true });
+    if (time > 0 && sentMsg) setTimeout(() => sentMsg.delete().catch(() => {}), time * 60 * 1000);
+  }
 
-    if (time > 0 && sentMsg) {
-      setTimeout(async () => {
-        await sentMsg.delete().catch(() => {});
-      }, time * 60 * 1000);
-    }
+  if (commandName === 'info') {
+    updateLiveInfo(guild);
+    await interaction.reply({ content: '✅ Server information has been updated!', ephemeral: true });
   }
 
   if (commandName === 'server') {
     const serverEmbed = new EmbedBuilder()
-      .setTitle(`Information Server: ${guild.name}`)
+      .setTitle(`Server Information: ${guild.name}`)
       .setThumbnail(guild.iconURL())
       .addFields(
-        { name: '👑 Onwer Server:', value: `<@${guild.ownerId}>`, inline: true },
-        { name: '👥 Number of Members:', value: `${guild.memberCount}`, inline: true },
+        { name: '👑 Owner:', value: `<@${guild.ownerId}>`, inline: true },
+        { name: '👥 Members:', value: `${guild.memberCount}`, inline: true },
         { name: '🌍 Location:', value: `Egypt`, inline: true },
-        { name: '📅 Date:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
+        { name: '📅 Created At:', value: `${guild.createdAt.toLocaleDateString('en-GB')}`, inline: true }
       )
       .setColor('#f1c40f');
     await interaction.reply({ embeds: [serverEmbed] });
   }
 
-  if (commandName === 'vote') {
-    const question = options.getString('question');
-    const voteEmbed = new EmbedBuilder()
-      .setTitle('New Vote! 🗳')
-      .setDescription(question)
-      .setFooter({ text: `By: ${interaction.user.username}` })
-      .setColor('#3498db')
-      .setTimestamp();
-    
-    const msg = await interaction.reply({ embeds: [voteEmbed], fetchReply: true });
-    await msg.react('✅');
-    await msg.react('❌');
-  }
-
   if (commandName === 'clear') {
     const amount = options.getInteger('amount');
     await channel.bulkDelete(Math.min(amount, 100)).catch(() => {});
-    await interaction.reply({ content: `Messages ${amount} deleted! ✅️`, ephemeral: true });
+    await interaction.reply({ content: `✅ Deleted ${amount} messages!`, ephemeral: true });
   }
 
   if (commandName === 'mute') {
     const target = options.getMember('target');
     const time = options.getInteger('duration');
     await target.timeout(time * 60 * 1000).catch(() => {});
-    await interaction.reply(`Silenced ${target} For the ${time} Minutes! 🔇`);
+    await interaction.reply({ content: `🔇 ${target.user.username} has been silenced for ${time} minutes!` });
   }
 
   if (commandName === 'unmute') {
     const target = options.getMember('target');
     await target.timeout(null).catch(() => {});
-    await interaction.reply(`Unmuted! 🔈 ${target}`);
+    await interaction.reply({ content: `🔊 ${target.user.username} has been unmuted!` });
   }
 
-  if (commandName === 'kick') { await options.getMember('target').kick().catch(() => {}); await interaction.reply(`The member has been kicked! 🦶`); }
-  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')).catch(() => {}); await interaction.reply(`The member has been banned! 🚫`); }
-  if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'The information has been updated! ✅️', ephemeral: true }); }
+  if (commandName === 'kick') { await options.getMember('target').kick().catch(() => {}); await interaction.reply({ content: `🦶 Member has been kicked!` }); }
+  if (commandName === 'ban') { await guild.members.ban(options.getUser('target')).catch(() => {}); await interaction.reply({ content: `🚫 Member has been banned!` }); }
 });
 
+// --- رسالة الترحيب ---
 client.on('guildMemberAdd', async (member) => {
     try {
       const role = member.guild.roles.cache.get(MEMBER_ROLE_ID);
       if (role) await member.roles.add(role);
     } catch (e) {}
-  
     const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
     if (welcomeChannel) {
       const welcomeEmbed = new EmbedBuilder()
         .setAuthor({ name: member.user.username, iconURL: member.user.displayAvatarURL() })
-        .setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑
-[¡}================{!}================[¡}
-- You are now from team PRO! 🥳
-- Join us and you will be enjoying! 🎉
-- Chat with us and go to read info server.
-[]--------------------!--------------------[]
-→ <#1482874761951576228> | <#1484639863411183636>
-[¡}================{!}================[¡}
-Thank you! ❤️ | From:@Pro King`)
-        .setColor('#00ff00')
-        .setTimestamp();
-
+        .setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1484639863411183636>\n[¡}================{!}================[¡}\nThank you! ❤️ | From:@Pro King`)
+        .setColor('#00ff00').setTimestamp();
       const sentMsg = await welcomeChannel.send({ content: `${member}`, embeds: [welcomeEmbed] }).catch(() => {});
-      
-      if (sentMsg) {
-          setTimeout(async () => {
-              await sentMsg.delete().catch(() => {});
-          }, 86400000);
-      }
+      if (sentMsg) setTimeout(() => sentMsg.delete().catch(() => {}), 86400000);
     }
     updateLiveInfo(member.guild);
-  });
-  
-  function startAds() {
-    const channel = client.channels.cache.get(AD_CHANNEL_ID);
-    if (!channel) return;
-  
-    setInterval(async () => {
-      try {
-        if (ad1Msg) await ad1Msg.delete().catch(() => {});
-        
-        const adEmbed = new EmbedBuilder()
-          .setTitle('📢 Server Advertisements')
-          .setDescription(`If you want to make totem about onwe skin or picture about onwe skin. Ask @Dream234
-→ You will receive your request in there!
-https://discord.com/channels/1482874760940486699/1484397891693969601
+});
 
-================================
-- All the news about the server is there!
-https://discord.com/channels/1482874760940486699/1482934834899714048
-
-================================
-- If you need to edit or make any texture pack.
-→ You can click on here to get request!
-https://discord.com/channels/1482874760940486699/1482936392479936645`)
-          .setColor('#3498db') // لون أزرق للمربع
-          .setFooter({ text: 'Pro Robot Ads System' })
-          .setTimestamp();
-        
-        ad1Msg = await channel.send({ embeds: [adEmbed] });
-    
-        setTimeout(async () => {
-          if (ad1Msg) {
-            await ad1Msg.delete().catch(() => {});
-            ad1Msg = null;
-          }
-        }, 15 * 60 * 1000);
-      } catch (err) {}
-    }, 30 * 60 * 1000);
-  }
-  
-  async function updateLiveInfo(guild) {
-    if (!guild) guild = client.guilds.cache.first();
-    const channel = client.channels.cache.get(INFO_CHANNEL_ID);
-    if (!channel || !guild) return;
-    const createdAt = guild.createdAt.toLocaleDateString('en-GB');
-    const info = `@everyone\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Onwer: <@1134146616857731173>\n• Robot: <@1495419259147386920>\n• Server from: Egypt\n• Date Server: ${createdAt}\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [<@&1482883802186514615>, <@&1486093106465210531>, <@&1482884804063268984>, <@&1482885169949052948>, <@&1482885029557178592>]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
-    try {
-      const msgs = await channel.messages.fetch({ limit: 10 });
-      const botMsg = msgs.find(m => m.author.id === client.user.id);
-      if (botMsg) await botMsg.edit(info); else await channel.send(info);
-    } catch (e) {}
-  }
+// --- تحديث معلومات السيرفر الحية ---
+async function updateLiveInfo(guild) {
+  if (!guild) guild = client.guilds.cache.first();
+  const channel = client.channels.cache.get(INFO_CHANNEL_ID);
+  if (!channel || !guild) return;
+  const createdAt = guild.createdAt.toLocaleDateString('en-GB');
+  const info = `@everyone\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Owner: <@1134146616857731173>\n• Robot: <@1495419259147386920>\n• Server from: Egypt\n• Date Server: ${createdAt}\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [<@&1482883802186514615>, <@&1486093106465210531>, <@&1482884804063268984>, <@&1482885169949052948>, <@&1482885029557178592>]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`;
+  try {
+    const msgs = await channel.messages.fetch({ limit: 10 });
+    const botMsg = msgs.find(m => m.author.id === client.user.id);
+    if (botMsg) await botMsg.edit(info); else await channel.send(info);
+  } catch (e) {}
+}
 
 client.login(process.env.TOKEN);
