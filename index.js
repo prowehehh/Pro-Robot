@@ -29,7 +29,6 @@ const CONFIG = {
 const badWordsPattern = [/كسم/i, /متناك/i, /شرموط/i, /خول/i, /عرص/i, /fuck/i, /shit/i, /ksm/i];
 const dangerousExts = [".exe", ".bat", ".scr", ".sh", ".vbs", ".msi", ".com", ".cmd"]; 
 const scamKeywords = ["free nitro", "discord.gift", "gift for you", "nitro free"];
-const userViolations = new Map();
 const adsStorage = new Map();
 
 const commands = [
@@ -48,16 +47,15 @@ const commands = [
         .addIntegerOption(o => o.setName('delete').setDescription('Auto-delete msg after X mins').setRequired(true))
         .addStringOption(o => o.setName('style').setDescription('Box or Normal').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
-    // تعديل أو حذف إعلان (نفس شكل الصورة اللي بعتها)
-    new SlashCommandBuilder().setName('ads_edit').setDescription('Edit or Delete an advertisement')
-        .addStringOption(o => o.setName('name').setDescription('Select Ad Name').setRequired(true).setAutocomplete(true))
-        .addStringOption(o => o.setName('text').setDescription('New Ad Content (Optional)').setRequired(false))
-        .addChannelOption(o => o.setName('channel').setDescription('New Channel (Optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
-        .addIntegerOption(o => o.setName('interval').setDescription('New Interval (Minutes - Optional)').setRequired(false))
-        .addIntegerOption(o => o.setName('delete').setDescription('New Auto-delete time (Optional)').setRequired(false))
-        .addStringOption(o => o.setName('style').setDescription('New Style (Optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    // تعديل الإعلان (لوحة التحكم)
+    new SlashCommandBuilder().setName('ads_edit').setDescription('Control Panel for Ads')
+        .addStringOption(o => o.setName('name').setDescription('Select the ad name to edit').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('text').setDescription('Update text (Optional)').setRequired(false))
+        .addChannelOption(o => o.setName('channel').setDescription('Update channel (Optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addIntegerOption(o => o.setName('interval').setDescription('Update interval (Optional)').setRequired(false))
+        .addIntegerOption(o => o.setName('delete').setDescription('Update auto-delete (Optional)').setRequired(false))
+        .addStringOption(o => o.setName('style').setDescription('Update style (Optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
-    new SlashCommandBuilder().setName('send').setDescription('Send custom message').addStringOption(o => o.setName('message').setDescription('Content').setRequired(true)).addStringOption(o => o.setName('style').setDescription('Style').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})).addIntegerOption(o => o.setName('delay_send').setDescription('Minutes to wait').setRequired(true)).addIntegerOption(o => o.setName('delete_after').setDescription('Minutes until delete').setRequired(true)).addStringOption(o => o.setName('color').setDescription('Box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
     new SlashCommandBuilder().setName('vote').setDescription('Start a poll').addStringOption(o => o.setName('question').setDescription('The question').setRequired(true)),
 ].map(c => c.toJSON());
 
@@ -92,13 +90,12 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// --- التفاعل مع الأوامر ---
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isAutocomplete()) {
         const focusedValue = interaction.options.getFocused();
         const choices = Array.from(adsStorage.keys());
         const filtered = choices.filter(choice => choice.startsWith(focusedValue));
-        await interaction.respond(filtered.map(c => ({ name: c, value: c })));
+        await interaction.respond(filtered.map(c => ({ name: c, value: c }))).catch(() => {});
     }
 
     if (interaction.isChatInputCommand()) {
@@ -121,45 +118,55 @@ client.on('interactionCreate', async (interaction) => {
             const ad = adsStorage.get(name);
             if (!ad) return interaction.reply({ content: "❌ Ad not found.", ephemeral: true });
 
-            // تحديث البيانات فقط إذا تم كتابتها
+            // تطبيق التحديثات إذا وجدت
             if (options.getString('text')) ad.text = options.getString('text');
             if (options.getChannel('channel')) ad.channelId = options.getChannel('channel').id;
             if (options.getInteger('interval')) ad.interval = options.getInteger('interval');
             if (options.getInteger('delete') !== null) ad.deleteAfter = options.getInteger('delete');
             if (options.getString('style')) ad.style = options.getString('style');
 
-            // إعادة تشغيل الحلقة بالبيانات الجديدة
             startAdLoop(name, guild.id);
+
+            const controlEmbed = new EmbedBuilder()
+                .setTitle(`🛠️ Ad Control Panel: ${name}`)
+                .setColor('#f1c40f')
+                .addFields(
+                    { name: '📝 Text', value: ad.text, inline: false },
+                    { name: '📺 Channel', value: `<#${ad.channelId}>`, inline: true },
+                    { name: '⏳ Interval', value: `${ad.interval}m`, inline: true },
+                    { name: '🗑️ Auto-delete', value: `${ad.deleteAfter}m`, inline: true }
+                );
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete Ad Forever 🗑️').setStyle(ButtonStyle.Danger)
             );
 
             await interaction.reply({ 
-                content: `⚙️ Ad **${name}** has been updated!\nUse the button below if you want to remove it completely.`, 
+                embeds: [controlEmbed],
                 components: [row], 
                 ephemeral: true 
             });
         }
         
-        // ... بقية الأوامر (translate, clear, mute, vote) نفس الكود القديم
+        if (commandName === 'ping') {
+            await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
+        }
+
+        if (commandName === 'clear') {
+            await interaction.deferReply({ ephemeral: true });
+            await interaction.channel.bulkDelete(Math.min(options.getInteger('amount'), 100));
+            await interaction.editReply('Done. 🧹');
+        }
+
         if (commandName === 'translate') {
-            const text = options.getString('text');
-            const to = options.getString('to').toLowerCase();
             await interaction.deferReply();
-            const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${to}&dt=t&q=${encodeURI(text)}`);
+            const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
             const json = await res.json();
             const result = json[0].map(i => i[0]).join('');
             await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 Translation').setDescription(result).setColor('#4285F4')] });
         }
-        if (commandName === 'clear') { await interaction.channel.bulkDelete(Math.min(options.getInteger('amount'), 100)); await interaction.reply({ content: 'Done.', ephemeral: true }); }
-        if (commandName === 'vote') {
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('v_yes').setLabel('Yes ✅').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('v_no').setLabel('No ❌').setStyle(ButtonStyle.Danger));
-            await interaction.reply({ embeds: [new EmbedBuilder().setTitle('Vote').setDescription(options.getString('question')).setColor('#f1c40f')], components: [row] });
-        }
     } 
 
-    // معالجة زر الحذف الأحمر
     else if (interaction.isButton()) {
         if (interaction.customId.startsWith('stop_ad_')) {
             const name = interaction.customId.replace('stop_ad_', '');
@@ -167,26 +174,24 @@ client.on('interactionCreate', async (interaction) => {
             if (ad) {
                 if (ad.timer) clearInterval(ad.timer);
                 adsStorage.delete(name);
-                await interaction.reply({ content: `🗑️ Ad **${name}** has been deleted from the system.`, ephemeral: true });
+                await interaction.update({ content: `🗑️ Ad **${name}** has been deleted.`, embeds: [], components: [], ephemeral: true });
             }
         }
     }
 });
 
-// --- بقية الكود (الترحيب و Info) كما هو ---
+// --- الترحيب والـ Info ---
 client.on('guildMemberAdd', async (member) => {
     const role = member.guild.roles.cache.get(CONFIG.AUTO_ROLE);
     if (role) await member.roles.add(role).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
         const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝘃𝗲𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1484639863411183636>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
-        const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] });
-        setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
+        const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
+        if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
     updateLiveInfo(member.guild);
 });
-
-client.on('guildMemberRemove', (member) => updateLiveInfo(member.guild));
 
 async function updateLiveInfo(guild) {
     if (!guild) guild = client.guilds.cache.first();
@@ -194,9 +199,11 @@ async function updateLiveInfo(guild) {
     if (!infoCh || !guild) return;
     const infoEmbed = new EmbedBuilder().setDescription(`[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Owner: <@${CONFIG.OWNER_ID}>\n• Robot: <@${CONFIG.BOT_ID}>\n• Server from: Egypt\n• Date Server: 15/03/2026\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [<@&1482883802186514615>, <@&1486093106465210531>, <@&1482884804063268984>, <@&1482885169949052948>, <@&1482885029557178592>]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`).setColor('#3498db');
     try {
-        const msgs = await infoCh.messages.fetch({ limit: 50 });
-        const botMessages = msgs.filter(m => m.author.id === client.user.id);
-        if (botMessages.size > 0) for (const m of botMessages.values()) await m.delete().catch(() => {});
+        const msgs = await infoCh.messages.fetch({ limit: 10 }).catch(() => null);
+        if (msgs) {
+            const botMessages = msgs.filter(m => m.author.id === client.user.id);
+            for (const m of botMessages.values()) await m.delete().catch(() => {});
+        }
         await infoCh.send({ content: '@everyone', embeds: [infoEmbed] });
     } catch (e) { console.error(e); }
 }
