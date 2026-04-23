@@ -26,19 +26,20 @@ const CONFIG = {
     BOT_ID: '1495419259147386920'
 };
 
-const badWordsPattern = [/كسم/i, /متناك/i, /شرموط/i, /خول/i, /عرص/i, /fuck/i, /shit/i, /ksm/i];
-const dangerousExts = [".exe", ".bat", ".scr", ".sh", ".vbs", ".msi", ".com", ".cmd"]; 
-const scamKeywords = ["free nitro", "discord.gift", "gift for you", "nitro free"];
 const adsStorage = new Map();
 
 const commands = [
     new SlashCommandBuilder().setName('ping').setDescription('Check bot speed'),
     new SlashCommandBuilder().setName('clear').setDescription('Clean chat').addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
-    new SlashCommandBuilder().setName('mute').setDescription('Mute member').addUserOption(o => o.setName('target').setDescription('Member').setRequired(true)).addIntegerOption(o => o.setName('duration').setDescription('Minutes').setRequired(true)),
-    new SlashCommandBuilder().setName('unmute').setDescription('Unmute member').addUserOption(o => o.setName('target').setDescription('Member').setRequired(true)),
-    new SlashCommandBuilder().setName('translate').setDescription('Translate text').addStringOption(o => o.setName('text').setDescription('Content').setRequired(true)).addStringOption(o => o.setName('to').setDescription('Language code').setRequired(true)),
     
-    // إعداد إعلان جديد
+    // أمر الإرسال (Send) اللي رجعناه
+    new SlashCommandBuilder().setName('send').setDescription('Send custom message')
+        .addStringOption(o => o.setName('message').setDescription('Content').setRequired(true))
+        .addStringOption(o => o.setName('style').setDescription('Style').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'}))
+        .addIntegerOption(o => o.setName('delay_send').setDescription('Minutes to wait').setRequired(true))
+        .addIntegerOption(o => o.setName('delete_after').setDescription('Minutes until delete').setRequired(true))
+        .addStringOption(o => o.setName('color').setDescription('Box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
+
     new SlashCommandBuilder().setName('ads_set').setDescription('Set auto advertisement')
         .addStringOption(o => o.setName('name').setDescription('Ad Name').setRequired(true))
         .addStringOption(o => o.setName('text').setDescription('Ad Content').setRequired(true))
@@ -47,15 +48,15 @@ const commands = [
         .addIntegerOption(o => o.setName('delete').setDescription('Auto-delete msg after X mins').setRequired(true))
         .addStringOption(o => o.setName('style').setDescription('Box or Normal').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
-    // تعديل الإعلان (لوحة التحكم)
-    new SlashCommandBuilder().setName('ads_edit').setDescription('Control Panel for Ads')
-        .addStringOption(o => o.setName('name').setDescription('Select the ad name to edit').setRequired(true).setAutocomplete(true))
-        .addStringOption(o => o.setName('text').setDescription('Update text (Optional)').setRequired(false))
-        .addChannelOption(o => o.setName('channel').setDescription('Update channel (Optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
-        .addIntegerOption(o => o.setName('interval').setDescription('Update interval (Optional)').setRequired(false))
-        .addIntegerOption(o => o.setName('delete').setDescription('Update auto-delete (Optional)').setRequired(false))
-        .addStringOption(o => o.setName('style').setDescription('Update style (Optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    new SlashCommandBuilder().setName('ads_edit').setDescription('Edit/Delete an advertisement')
+        .addStringOption(o => o.setName('name').setDescription('Select Ad Name').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('text').setDescription('New Content (Optional)').setRequired(false))
+        .addChannelOption(o => o.setName('channel').setDescription('New Channel (Optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addIntegerOption(o => o.setName('interval').setDescription('New Interval (Optional)').setRequired(false))
+        .addIntegerOption(o => o.setName('delete').setDescription('New Delete Time (Optional)').setRequired(false))
+        .addStringOption(o => o.setName('style').setDescription('New Style (Optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
+    new SlashCommandBuilder().setName('translate').setDescription('Translate text').addStringOption(o => o.setName('text').setDescription('Content').setRequired(true)).addStringOption(o => o.setName('to').setDescription('Language code').setRequired(true)),
     new SlashCommandBuilder().setName('vote').setDescription('Start a poll').addStringOption(o => o.setName('question').setDescription('The question').setRequired(true)),
 ].map(c => c.toJSON());
 
@@ -99,7 +100,30 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isChatInputCommand()) {
-        const { commandName, options, guild } = interaction;
+        const { commandName, options, guild, channel } = interaction;
+
+        // تنفيذ أمر Send
+        if (commandName === 'send') {
+            const msg = options.getString('message');
+            const style = options.getString('style');
+            const delay = options.getInteger('delay_send');
+            const delAfter = options.getInteger('delete_after');
+            const color = options.getString('color') || '#3498db';
+
+            await interaction.reply({ content: `⏱️ سيتم إرسال الرسالة بعد ${delay} دقيقة.`, ephemeral: true });
+
+            setTimeout(async () => {
+                let sent;
+                if (style === 'embed') {
+                    sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(msg).setColor(color)] }).catch(() => {});
+                } else {
+                    sent = await channel.send(msg).catch(() => {});
+                }
+                if (sent && delAfter > 0) {
+                    setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
+                }
+            }, delay * 60000);
+        }
 
         if (commandName === 'ads_set') {
             const name = options.getString('name');
@@ -110,7 +134,7 @@ client.on('interactionCreate', async (interaction) => {
             };
             adsStorage.set(name, data);
             startAdLoop(name, guild.id);
-            await interaction.reply({ content: `✅ Ad **${name}** has been started.`, ephemeral: true });
+            await interaction.reply({ content: `✅ Ad **${name}** started.`, ephemeral: true });
         }
 
         if (commandName === 'ads_edit') {
@@ -118,7 +142,6 @@ client.on('interactionCreate', async (interaction) => {
             const ad = adsStorage.get(name);
             if (!ad) return interaction.reply({ content: "❌ Ad not found.", ephemeral: true });
 
-            // تطبيق التحديثات إذا وجدت
             if (options.getString('text')) ad.text = options.getString('text');
             if (options.getChannel('channel')) ad.channelId = options.getChannel('channel').id;
             if (options.getInteger('interval')) ad.interval = options.getInteger('interval');
@@ -127,37 +150,22 @@ client.on('interactionCreate', async (interaction) => {
 
             startAdLoop(name, guild.id);
 
-            const controlEmbed = new EmbedBuilder()
-                .setTitle(`🛠️ Ad Control Panel: ${name}`)
-                .setColor('#f1c40f')
-                .addFields(
-                    { name: '📝 Text', value: ad.text, inline: false },
-                    { name: '📺 Channel', value: `<#${ad.channelId}>`, inline: true },
-                    { name: '⏳ Interval', value: `${ad.interval}m`, inline: true },
-                    { name: '🗑️ Auto-delete', value: `${ad.deleteAfter}m`, inline: true }
-                );
-
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete Ad Forever 🗑️').setStyle(ButtonStyle.Danger)
             );
 
             await interaction.reply({ 
-                embeds: [controlEmbed],
+                content: `⚙️ Ad **${name}** updated!`, 
                 components: [row], 
                 ephemeral: true 
             });
         }
-        
-        if (commandName === 'ping') {
-            await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
-        }
 
         if (commandName === 'clear') {
-            await interaction.deferReply({ ephemeral: true });
-            await interaction.channel.bulkDelete(Math.min(options.getInteger('amount'), 100));
-            await interaction.editReply('Done. 🧹');
+            await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
+            await interaction.reply({ content: 'Done.', ephemeral: true });
         }
-
+        
         if (commandName === 'translate') {
             await interaction.deferReply();
             const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
@@ -174,22 +182,16 @@ client.on('interactionCreate', async (interaction) => {
             if (ad) {
                 if (ad.timer) clearInterval(ad.timer);
                 adsStorage.delete(name);
-                await interaction.update({ content: `🗑️ Ad **${name}** has been deleted.`, embeds: [], components: [], ephemeral: true });
+                await interaction.reply({ content: `🗑️ Ad **${name}** deleted.`, ephemeral: true });
             }
         }
     }
 });
 
-// --- الترحيب والـ Info ---
+// --- Info & Welcome ---
 client.on('guildMemberAdd', async (member) => {
     const role = member.guild.roles.cache.get(CONFIG.AUTO_ROLE);
     if (role) await member.roles.add(role).catch(() => {});
-    const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
-    if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝘃𝗲𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1484639863411183636>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
-        const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
-        if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
-    }
     updateLiveInfo(member.guild);
 });
 
@@ -197,15 +199,13 @@ async function updateLiveInfo(guild) {
     if (!guild) guild = client.guilds.cache.first();
     const infoCh = client.channels.cache.get(CONFIG.INFO_CH);
     if (!infoCh || !guild) return;
-    const infoEmbed = new EmbedBuilder().setDescription(`[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Owner: <@${CONFIG.OWNER_ID}>\n• Robot: <@${CONFIG.BOT_ID}>\n• Server from: Egypt\n• Date Server: 15/03/2026\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [<@&1482883802186514615>, <@&1486093106465210531>, <@&1482884804063268984>, <@&1482885169949052948>, <@&1482885029557178592>]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`).setColor('#3498db');
-    try {
-        const msgs = await infoCh.messages.fetch({ limit: 10 }).catch(() => null);
-        if (msgs) {
-            const botMessages = msgs.filter(m => m.author.id === client.user.id);
-            for (const m of botMessages.values()) await m.delete().catch(() => {});
-        }
-        await infoCh.send({ content: '@everyone', embeds: [infoEmbed] });
-    } catch (e) { console.error(e); }
+    const infoEmbed = new EmbedBuilder().setDescription(`[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Owner: <@${CONFIG.OWNER_ID}>\n• Robot: <@${CONFIG.BOT_ID}>\n• Total Members: ${guild.memberCount}\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`).setColor('#3498db');
+    const msgs = await infoCh.messages.fetch({ limit: 10 }).catch(() => null);
+    if (msgs) {
+        const botMsg = msgs.find(m => m.author.id === client.user.id);
+        if (botMsg) await botMsg.edit({ embeds: [infoEmbed] });
+        else await infoCh.send({ embeds: [infoEmbed] });
+    }
 }
 
 client.login(process.env.TOKEN);
