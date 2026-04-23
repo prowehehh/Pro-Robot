@@ -64,7 +64,7 @@ client.on('interactionCreate', async interaction => {
     const text = options.getString('message');
     const time = options.getInteger('time');
     const sentMsg = await channel.send(text).catch(() => {});
-    await interaction.reply({ content: `✅ تم إرسال رسالتك بنجاح!`, ephemeral: true });
+    await interaction.reply({ content: `Your message has been sent successfully! ✅`, ephemeral: true });
 
     if (time > 0 && sentMsg) {
       setTimeout(async () => {
@@ -92,7 +92,7 @@ client.on('interactionCreate', async interaction => {
     const voteEmbed = new EmbedBuilder()
       .setTitle('New Vote! 🗳')
       .setDescription(question)
-      .setFooter({ text: `بواسطة: ${interaction.user.username}` })
+      .setFooter({ text: `By: ${interaction.user.username}` })
       .setColor('#3498db')
       .setTimestamp();
     
@@ -144,7 +144,7 @@ client.on('guildMemberAdd', async (member) => {
 []--------------------!--------------------[]
 → <#1482874761951576228> | <#1484639863411183636>
 [¡}================{!}================[¡}
-Thank you! ❤️`)
+Thank you! ❤️ | From:@Pro King`)
         // تم حذف سطر الـ setThumbnail لإزالة الصورة الجانبية الكبيرة
         .setColor('#00ff00')
         .setTimestamp();
