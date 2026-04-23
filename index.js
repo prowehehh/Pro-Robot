@@ -3,7 +3,6 @@ const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🚀'));
-// تعديل بسيط هنا عشان Railway يشتغل صح
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server is ready on port ${port}!`));
 
@@ -34,6 +33,12 @@ const commands = [
   new SlashCommandBuilder().setName('unmute').setDescription('فك إسكات').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('kick').setDescription('طرد عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
   new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(opt => opt.setName('target').setDescription('العضو').setRequired(true)),
+  // الأمر الجديد /send
+  new SlashCommandBuilder()
+    .setName('send')
+    .setDescription('إرسال رسالة وحذفها بعد وقت معين')
+    .addStringOption(opt => opt.setName('message').setDescription('اكتب الرسالة هنا').setRequired(true))
+    .addIntegerOption(opt => opt.setName('time').setDescription('وقت المسح بالدقائق (0 يعني لا تمسح)').setRequired(true)),
 ].map(command => command.toJSON());
 
 client.on('ready', async () => {
@@ -50,15 +55,31 @@ client.on('ready', async () => {
   startAds();
 });
 
-// --- الأوامر المساعدة ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName, options, guild, channel } = interaction;
 
-  // 1. أمر Ping
   if (commandName === 'ping') await interaction.reply(`🏓 Pong! \`${client.ws.ping}ms\``);
 
-  // 2. أمر Server
+  // --- منطق أمر /send الجديد ---
+  if (commandName === 'send') {
+    const text = options.getString('message');
+    const time = options.getInteger('time');
+
+    // إرسال الرسالة في الشات
+    const sentMsg = await channel.send(text).catch(() => {});
+    
+    // الرد على المستخدم (رسالة مخفية) لتأكيد الإرسال
+    await interaction.reply({ content: `✅ تم إرسال رسالتك بنجاح!`, ephemeral: true });
+
+    // إذا حددت وقت (أكبر من 0)، البوت هيمسحها
+    if (time > 0 && sentMsg) {
+      setTimeout(async () => {
+        await sentMsg.delete().catch(() => {});
+      }, time * 60 * 1000); // تحويل الدقائق لملي ثانية
+    }
+  }
+
   if (commandName === 'server') {
     const serverEmbed = new EmbedBuilder()
       .setTitle(`Information Server: ${guild.name}`)
@@ -73,7 +94,6 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({ embeds: [serverEmbed] });
   }
 
-  // 3. أمر Vote
   if (commandName === 'vote') {
     const question = options.getString('question');
     const voteEmbed = new EmbedBuilder()
@@ -88,14 +108,12 @@ client.on('interactionCreate', async interaction => {
     await msg.react('❌');
   }
 
-  // 4. أمر Clear
   if (commandName === 'clear') {
     const amount = options.getInteger('amount');
     await channel.bulkDelete(Math.min(amount, 100)).catch(() => {});
     await interaction.reply({ content: `Messages ${amount} deleted! ✅️`, ephemeral: true });
   }
 
-  // 5. أمر Mute
   if (commandName === 'mute') {
     const target = options.getMember('target');
     const time = options.getInteger('duration');
@@ -103,14 +121,12 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply(`Silenced ${target} For the ${time} Minutes! 🔇`);
   }
 
-  // 6. أمر Unmute
   if (commandName === 'unmute') {
     const target = options.getMember('target');
     await target.timeout(null).catch(() => {});
     await interaction.reply(`Unmuted! 🔈 ${target}`);
   }
 
-  // 7. باقي أوامر الإدارة
   if (commandName === 'kick') { await options.getMember('target').kick().catch(() => {}); await interaction.reply(`The member has been kicked! 🦶`); }
   if (commandName === 'ban') { await guild.members.ban(options.getUser('target')).catch(() => {}); await interaction.reply(`The member has been banned! 🚫`); }
   if (commandName === 'info') { updateLiveInfo(guild); await interaction.reply({ content: 'The information has been updated! ✅️', ephemeral: true }); }
@@ -124,28 +140,27 @@ client.on('guildMemberAdd', async (member) => {
   
     const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
     if (welcomeChannel) {
-      const welcomeMsg = `${member}!
-Welcome to the **𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂** 👑!
-============================
-● https://discord.com/channels/1482874760940486699/1482874761951576228 to chat with all in this server.
-● https://discord.com/channels/1482874760940486699/1482936392479936645 to see all news about packs.
-● https://discord.com/channels/1482874760940486699/1482935928963203142 to download all packs.
-● https://discord.com/channels/1482874760940486699/1484268268373020702 to download skin packs.
-● https://discord.com/channels/1482874760940486699/1484268542458331356 to download worlds.
-● Discover more in this server.
-Thank you for joining our server ❤️!
---------------------------------------------
-Go to read the rules and information:
-● https://discord.com/channels/1482874760940486699/1482901664951304222 ● https://discord.com/channels/1482874760940486699/1484639863411183636
-============================
-@everyone`;
+      const welcomeEmbed = new EmbedBuilder()
+        .setAuthor({ name: member.user.username, iconURL: member.user.displayAvatarURL() })
+        .setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑
+[¡}================{!}================[¡}
+- You are now from team PRO! 🥳
+- Join us and you will be enjoying! 🎉
+- Chat with us and go to read info server.
+[]--------------------!--------------------[]
+→ <#1482874761951576228> | <#1484639863411183636>
+[¡}================{!}================[¡}
+Thank you! ❤️`)
+        .setThumbnail(member.user.displayAvatarURL())
+        .setColor('#00ff00')
+        .setTimestamp();
+
+      const sentMsg = await welcomeChannel.send({ content: `${member}`, embeds: [welcomeEmbed] }).catch(() => {});
       
-      // إرسال الرسالة وتحديد وقت المسح (24 ساعة)
-      const sentMsg = await welcomeChannel.send(welcomeMsg).catch(() => {});
       if (sentMsg) {
           setTimeout(async () => {
               await sentMsg.delete().catch(() => {});
-          }, 86400000); // 86400000 مللي ثانية = 24 ساعة
+          }, 86400000);
       }
     }
     updateLiveInfo(member.guild);
