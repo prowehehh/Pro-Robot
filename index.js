@@ -91,7 +91,7 @@ client.on('messageCreate', async (message) => {
         const chat = model.startChat({
             history: [
                 { role: "user", parts: [{ text: systemPrompt }] },
-                { role: "model", parts: [{ text: "Understood. I am Pro Security System AI ready to help." }] },
+                { role: "model", parts: [{ text: "Understood. I am Pro Security System AI." }] },
             ],
         });
 
@@ -115,7 +115,7 @@ client.on('messageCreate', async (message) => {
         }
     } catch (e) { 
         console.error("AI Error:", e);
-        await message.reply("عذراً، حدث خطأ في الاتصال بالـ AI. تأكد من إعدادات المنطقة في Railway وحاول مرة أخرى.");
+        await message.reply("عذراً، حدث خطأ في الاتصال بالـ AI. تأكد من أن مفتاح API صحيح ومنطقة Railway مضبوطة بشكل سليم.");
     }
 });
 
