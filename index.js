@@ -56,30 +56,30 @@ async function getMistralResponse(userMessage) {
                       * @Vip: Needs trust and experience (for 3rd-degree members).
                       * @Helper: Help the server with required tasks.
                     - Server Rules: 1. No insults/bad words. 2. No harmful links/files. 3. Emojis/Stickers/GIFs allowed. 4. No ads for other servers. 5. Slowmode enabled. 6. Verify account required. Full rules: https://discord.com/channels/1482874760940486699/1484639863411183636
-                    - Behavior: Answer greetings (Hi/مرحبا). Keep responses short and professional. If unknown, say: "I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>".` },
+                    - Behavior: Answer greetings (Hi/مرحبا). Keep responses short and professional. If unknown, say: "I don't know, ask the owner! <@${CONFIG.OWNER_ID}>".` },
                     { role: "user", content: userMessage }
                 ],
                 temperature: 0.5
             })
         });
         const data = await response.json();
-        return data.choices?.[0]?.message?.content || `I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>`;
+        return data.choices?.[0]?.message?.content || `I don't know, you have to ask onwer! <@${CONFIG.OWNER_ID}>`;
     } catch (err) {
-        return `I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>`;
+        return `I don't know, ask the owner! <@${CONFIG.OWNER_ID}>`;
     }
 }
 
 // --- تسجيل جميع الأوامر بدون استثناء ---
 const commands = [
-    new SlashCommandBuilder().setName('ping').setDescription('Check bot speed'),
+    new SlashCommandBuilder().setName('ping').setDescription('Bot latency speed'),
     
-    new SlashCommandBuilder().setName('clear').setDescription('Clean the chat')
+    new SlashCommandBuilder().setName('clear').setDescription('Clear the chat')
         .addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
     
-    new SlashCommandBuilder().setName('send').setDescription('Send a custom message with delay')
+    new SlashCommandBuilder().setName('send').setDescription('Send a custom message with specific time')
         .addStringOption(o => o.setName('message').setDescription('Message content').setRequired(true))
         .addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'}))
-        .addIntegerOption(o => o.setName('delay_send').setDescription('Delay time (minutes)').setRequired(true))
+        .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes)').setRequired(true))
         .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true))
         .addStringOption(o => o.setName('color').setDescription('Box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
 
@@ -87,20 +87,20 @@ const commands = [
         .addStringOption(o => o.setName('name').setDescription('Ad name').setRequired(true))
         .addStringOption(o => o.setName('text').setDescription('Ad content').setRequired(true))
         .addChannelOption(o => o.setName('channel').setDescription('Ad channel').addChannelTypes(ChannelType.GuildText).setRequired(true))
-        .addIntegerOption(o => o.setName('interval').setDescription('Send every (minutes)').setRequired(true))
-        .addIntegerOption(o => o.setName('delete').setDescription('Delete after (minutes)').setRequired(true))
+        .addIntegerOption(o => o.setName('interval').setDescription('Send every X minutes').setRequired(true))
+        .addIntegerOption(o => o.setName('delete').setDescription('Delete after X minutes').setRequired(true))
         .addStringOption(o => o.setName('style').setDescription('Style').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
     new SlashCommandBuilder().setName('ads_edit').setDescription('Edit or delete an existing ad')
         .addStringOption(o => o.setName('name').setDescription('Choose ad name').setRequired(true).setAutocomplete(true))
-        .addStringOption(o => o.setName('text').setDescription('New text (Optional)').setRequired(false))
-        .addChannelOption(o => o.setName('channel').setDescription('New channel (Optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
-        .addIntegerOption(o => o.setName('interval').setDescription('New interval (Optional)').setRequired(false))
-        .addIntegerOption(o => o.setName('delete').setDescription('New delete time (Optional)').setRequired(false))
-        .addStringOption(o => o.setName('style').setDescription('New style (Optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+        .addStringOption(o => o.setName('text').setDescription('New text (optional)').setRequired(false))
+        .addChannelOption(o => o.setName('channel').setDescription('New channel (optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addIntegerOption(o => o.setName('interval').setDescription('New interval (optional)').setRequired(false))
+        .addIntegerOption(o => o.setName('delete').setDescription('New delete time (optional)').setRequired(false))
+        .addStringOption(o => o.setName('style').setDescription('New style (optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
     new SlashCommandBuilder().setName('translate').setDescription('Translate text')
-        .addStringOption(o => o.setName('text').setDescription('Text').setRequired(true))
+        .addStringOption(o => o.setName('text').setDescription('The text').setRequired(true))
         .addStringOption(o => o.setName('to').setDescription('Language code (e.g: ar)').setRequired(true)),
 
     new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote')
@@ -207,7 +207,7 @@ client.on('interactionCreate', async (interaction) => {
                 const delay = options.getInteger('delay_send');
                 const delAfter = options.getInteger('delete_after');
                 const color = options.getString('color') || '#3498db';
-                await interaction.reply({ content: `✅ Message will arrive in ${delay} minute(s).`, ephemeral: true });
+                await interaction.reply({ content: `✅ The message will be sent in ${delay} minute(s).`, ephemeral: true });
                 setTimeout(async () => {
                     let sent;
                     if (style === 'embed') { sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(msg).setColor(color)] }).catch(() => {}); }
@@ -232,13 +232,13 @@ client.on('interactionCreate', async (interaction) => {
                 if (options.getInteger('delete') !== null) ad.deleteAfter = options.getInteger('delete');
                 if (options.getString('style')) ad.style = options.getString('style');
                 startAdLoop(name, guild.id);
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete Ad Permanently 🗑️').setStyle(ButtonStyle.Danger));
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete ad permanently 🗑️').setStyle(ButtonStyle.Danger));
                 return await interaction.reply({ content: `⚙️ Ad **${name}** updated successfully.`, components: [row], ephemeral: true });
             }
             if (commandName === 'clear') {
                 await interaction.deferReply({ ephemeral: true });
                 await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
-                return await interaction.editReply('Chat cleared successfully! 🧹');
+                return await interaction.editReply('Chat cleaned successfully! 🧹');
             }
             if (commandName === 'translate') {
                 await interaction.deferReply();
@@ -255,7 +255,7 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.isButton() && interaction.customId.startsWith('stop_ad_')) {
         const name = interaction.customId.replace('stop_ad_', '');
         const ad = adsStorage.get(name);
-        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ Ad **${name}** deleted from system.`, components: [], ephemeral: true }); }
+        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ Ad **${name}** has been removed from the system.`, components: [], ephemeral: true }); }
     }
 });
 
