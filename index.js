@@ -40,7 +40,7 @@ const commands = [
     new SlashCommandBuilder().setName('ping').setDescription('سرعة اتصال البوت'),
     new SlashCommandBuilder().setName('clear').setDescription('تنظيف الشات').addIntegerOption(o => o.setName('amount').setDescription('عدد الرسائل').setRequired(true)),
     new SlashCommandBuilder().setName('send').setDescription('إرسال رسالة مخصصة بوقت محدد').addStringOption(o => o.setName('message').setDescription('محتوى الرسالة').setRequired(true)).addStringOption(o => o.setName('style').setDescription('شكل الرسالة').setRequired(true).addChoices({name:'مربع (Box)',value:'embed'},{name:'عادي (Normal)',value:'normal'})).addIntegerOption(o => o.setName('delay_send').setDescription('وقت الانتظار قبل الإرسال (بالدقائق)').setRequired(true)).addIntegerOption(o => o.setName('delete_after').setDescription('وقت الحذف التلقائي (بالدقائق)').setRequired(true)).addStringOption(o => o.setName('color').setDescription('لون المربع').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
-    new SlashCommandBuilder().setName('ads_set').setDescription('إعداد إعلان تلقائي جديد').addStringOption(o => o.setName('name').setDescription('اسم الإعلان').setRequired(true)).addStringOption(o => o.setName('text').setDescription('محتوى الإعلان').setRequired(true)).addChannelOption(o => o.setName('channel').setDescription('قناة الإعلان').addChannelTypes(ChannelType.GuildText).setRequired(true)).addIntegerOption(o => o.setName('interval').setDescription('الإرسال كل كم دقيقة').setRequired(true)).addIntegerOption(o => o.setName('delete').setDescription('الحذف بعد كم دقيقة').setRequired(true)).addStringOption(o => o.setName('style').setDescription('الشكل').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    new SlashCommandBuilder().setName('ads_set').setDescription('إعداد إعلان تلقائي جديد').addStringOption(o => o.setName('name').setDescription('اسم الإعلان').setRequired(true)).addStringOption(o => o.setName('text').setDescription('محتوى الإعلان').setRequired(true)).addChannelOption(o => o.setName('channel').setDescription('قناة الإعلان').addChannelTypes(ChannelType.GuildText).setRequired(true)).addIntegerOption(o => o.setName('interval').setDescription('إرسال كل كم دقيقة').setRequired(true)).addIntegerOption(o => o.setName('delete').setDescription('الحذف بعد كم دقيقة').setRequired(true)).addStringOption(o => o.setName('style').setDescription('الشكل').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
     new SlashCommandBuilder().setName('ads_edit').setDescription('تعديل أو حذف إعلان قائم').addStringOption(o => o.setName('name').setDescription('اختر اسم الإعلان').setRequired(true).setAutocomplete(true)).addStringOption(o => o.setName('text').setDescription('النص الجديد (اختياري)').setRequired(false)).addChannelOption(o => o.setName('channel').setDescription('القناة الجديدة (اختياري)').addChannelTypes(ChannelType.GuildText).setRequired(false)).addIntegerOption(o => o.setName('interval').setDescription('الوقت الجديد (اختياري)').setRequired(false)).addIntegerOption(o => o.setName('delete').setDescription('وقت الحذف الجديد (اختياري)').setRequired(false)).addStringOption(o => o.setName('style').setDescription('الشكل الجديد (اختياري)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
     new SlashCommandBuilder().setName('translate').setDescription('ترجمة نصوص').addStringOption(o => o.setName('text').setDescription('النص').setRequired(true)).addStringOption(o => o.setName('to').setDescription('كود اللغة (مثال: ar)').setRequired(true)),
     new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت سريع').addStringOption(o => o.setName('question').setDescription('سؤال التصويت').setRequired(true)),
@@ -83,15 +83,18 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot || message.channel.id !== CONFIG.HELP_CH) return;
 
-    const systemPrompt = `You are a professional AI assistant for "Pro Security System" Minecraft server. 
-    Location: Egypt. Owner: <@${CONFIG.OWNER_ID}>.
-    Ranks: @Ultimate (1.2$), @YouTuber, @Booster, @Vip, @Helper.
-    Rules: No toxicity, no ads. If unknown, say: "انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>".`;
+    const systemPrompt = `You are an AI for "Pro Security System". Support all languages. 
+    Server Info: Created 15/03/2026, Location: Egypt, Owner: <@${CONFIG.OWNER_ID}>.
+    Roles: @Ultimate, @YouTuber, @Booster Gold, @Vip, @Helper.
+    Rules: No insults/swearing, no advertising, no commands, no bug exploits.
+    If unknown: "انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>".`;
 
     try {
         await message.channel.sendTyping();
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // تعديل لضمان استقرار النسخة
-        const result = await model.generateContent(systemPrompt + "\nUser Question: " + message.content);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        // استخدام دمج النصوص لضمان استقرار الاستجابة
+        const result = await model.generateContent(systemPrompt + "\n\nUser Question: " + message.content);
         const response = await result.response;
         const text = response.text();
 
@@ -111,7 +114,7 @@ client.on('messageCreate', async (message) => {
         }
     } catch (e) { 
         console.error("AI Error:", e);
-        await message.reply("عذراً، حدث خطأ أثناء التحدث مع الـ AI. حاول لاحقاً.");
+        await message.reply("عذراً، حدث خطأ في الاتصال بالـ AI. حاول مرة أخرى.");
     }
 });
 
@@ -209,7 +212,7 @@ client.on('guildMemberAdd', async (member) => {
     if (role) await member.roles.add(role).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝘃𝗲𝗿 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
+        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝗲𝐫𝘃𝗲𝗿 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
