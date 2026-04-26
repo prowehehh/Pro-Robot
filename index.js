@@ -8,7 +8,7 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 const app = express();
 
 // تشغيل السيرفر عشان البوت يفضل صاحي 24 ساعة
-app.get('/', (req, res) => res.send('Pro Security System is Online! 🛡️'));
+app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
@@ -33,7 +33,7 @@ const CONFIG = {
 
 const adsStorage = new Map();
 
-// --- وظيفة الـ AI (Mistral) ---
+// --- وظيفة الـ AI (Mistral) المحترف ---
 async function getMistralResponse(userMessage) {
     try {
         const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -43,17 +43,22 @@ async function getMistralResponse(userMessage) {
                 'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
             },
             body: JSON.stringify({
-                model: "mistral-small", // تم الترقية لموديل أذكى وأسرع
+                model: "mistral-small", // موديل أذكى للردود الاحترافية
                 messages: [
-                    { role: "system", content: `You are "Pro AI", an elite and professional assistant for "Pro Security System". 
-                    - Support ALL world languages fluently.
+                    { role: "system", content: `You are "Pro Robot", the elite professional AI assistant of this server.
+                    - Support ALL world languages fluently. Respond in the same language as the user.
                     - Server Info: Created 15/03/2026, Location: Egypt, Owner: Saif (<@${CONFIG.OWNER_ID}>).
-                    - Ranks: @Ultimate (1.2$), @YouTuber, @Booster Gold, @Vip, @Helper. Guide users to the Submit button for requests.
-                    - Rules: No insults, No ads, No harmful links. Professional and helpful personality.
-                    - If you don't know something, say: "انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>".` },
+                    - Ranks Info:
+                      * @Ultimate: Pay 1.2$ + missions in https://discord.com/channels/1482874760940486699/1482934834899714048
+                      * @YouTuber: Make an advertisement for this server.
+                      * @Booster Gold: Boost the server.
+                      * @Vip: Needs trust and experience (for 3rd-degree members).
+                      * @Helper: Help the server with required tasks.
+                    - Server Rules: 1. No insults/bad words. 2. No harmful links/files. 3. Emojis/Stickers/GIFs allowed. 4. No ads for other servers. 5. Slowmode enabled. 6. Verify account required. Full rules: https://discord.com/channels/1482874760940486699/1484639863411183636
+                    - Behavior: Answer greetings (Hi/مرحبا). Keep responses short and professional. If unknown, say: "انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>".` },
                     { role: "user", content: userMessage }
                 ],
-                temperature: 0.7
+                temperature: 0.5
             })
         });
         const data = await response.json();
@@ -143,14 +148,16 @@ client.on('messageCreate', async (message) => {
         const text = await getMistralResponse(message.content);
         if (text) {
             const botMsg = await message.reply(text);
+            // مسح الرسائل بعد 5 دقائق (300,000 مللي ثانية)
             setTimeout(() => {
                 message.delete().catch(() => {});
                 botMsg.delete().catch(() => {});
-            }, 300000); // تعديل المسح ليكون بعد 5 دقائق (300 ألف مللي ثانية)
+            }, 300000); 
         }
 
         // إظهار رسالة الـ Submit عند طلب رتبة
-        if (message.content.includes('rank') || message.content.includes('رتبة') || message.content.includes('رتبه')) {
+        const rankKeywords = ['rank', 'role', 'رتبة', 'رتبه', 'رتب'];
+        if (rankKeywords.some(key => message.content.toLowerCase().includes(key))) {
             const embed = new EmbedBuilder()
                 .setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510")
                 .setColor('#3498db');
@@ -158,7 +165,7 @@ client.on('messageCreate', async (message) => {
                 new ButtonBuilder().setCustomId('open_rank_modal').setLabel('Submit').setStyle(ButtonStyle.Primary)
             );
             const sentModalMsg = await message.channel.send({ embeds: [embed], components: [row] });
-            setTimeout(() => sentModalMsg.delete().catch(() => {}), 300000); // مسح بعد 5 دقائق
+            setTimeout(() => sentModalMsg.delete().catch(() => {}), 300000);
         }
     } catch (e) { console.error(e); }
 });
@@ -177,6 +184,7 @@ client.on('interactionCreate', async (interaction) => {
         const xbox = interaction.fields.getTextInputValue('xbox_user');
         const rank = interaction.fields.getTextInputValue('rank_type');
         const logCh = client.channels.cache.get(CONFIG.SUBMIT_LOG);
+        // إرسال البيانات مع منشن الشخص @
         if (logCh) await logCh.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
@@ -256,7 +264,7 @@ client.on('guildMemberAdd', async (member) => {
     if (role) await member.roles.add(role).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝘃er 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
+        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 Robot 𝐟𝗼𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
