@@ -46,6 +46,7 @@ async function getMistralResponse(userMessage) {
                 model: "mistral-small", // موديل أذكى للردود الاحترافية
                 messages: [
                     { role: "system", content: `You are "Pro Robot", the elite professional AI assistant of this server.
+                    - Server Name: "Pro Server for MC".
                     - Support ALL world languages fluently. Respond in the same language as the user.
                     - Server Info: Created 15/03/2026, Location: Egypt, Owner: Saif (<@${CONFIG.OWNER_ID}>).
                     - Ranks Info:
@@ -55,55 +56,55 @@ async function getMistralResponse(userMessage) {
                       * @Vip: Needs trust and experience (for 3rd-degree members).
                       * @Helper: Help the server with required tasks.
                     - Server Rules: 1. No insults/bad words. 2. No harmful links/files. 3. Emojis/Stickers/GIFs allowed. 4. No ads for other servers. 5. Slowmode enabled. 6. Verify account required. Full rules: https://discord.com/channels/1482874760940486699/1484639863411183636
-                    - Behavior: Answer greetings (Hi/مرحبا). Keep responses short and professional. If unknown, say: "انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>".` },
+                    - Behavior: Answer greetings (Hi/مرحبا). Keep responses short and professional. If unknown, say: "I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>".` },
                     { role: "user", content: userMessage }
                 ],
                 temperature: 0.5
             })
         });
         const data = await response.json();
-        return data.choices?.[0]?.message?.content || `I don't know, you have to ask onwer! <@${CONFIG.OWNER_ID}>`;
+        return data.choices?.[0]?.message?.content || `I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>`;
     } catch (err) {
-        return `انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>`;
+        return `I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>`;
     }
 }
 
 // --- تسجيل جميع الأوامر بدون استثناء ---
 const commands = [
-    new SlashCommandBuilder().setName('ping').setDescription('سرعة اتصال البوت'),
+    new SlashCommandBuilder().setName('ping').setDescription('Check bot speed'),
     
-    new SlashCommandBuilder().setName('clear').setDescription('تنظيف الشات')
-        .addIntegerOption(o => o.setName('amount').setDescription('عدد الرسائل').setRequired(true)),
+    new SlashCommandBuilder().setName('clear').setDescription('Clean the chat')
+        .addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
     
-    new SlashCommandBuilder().setName('send').setDescription('إرسال رسالة مخصصة بوقت محدد')
-        .addStringOption(o => o.setName('message').setDescription('محتوى الرسالة').setRequired(true))
-        .addStringOption(o => o.setName('style').setDescription('شكل الرسالة').setRequired(true).addChoices({name:'مربع (Box)',value:'embed'},{name:'عادي (Normal)',value:'normal'}))
-        .addIntegerOption(o => o.setName('delay_send').setDescription('وقت الانتظار قبل الإرسال (بالدقائق)').setRequired(true))
-        .addIntegerOption(o => o.setName('delete_after').setDescription('وقت الحذف التلقائي (بالدقائق)').setRequired(true))
-        .addStringOption(o => o.setName('color').setDescription('لون المربع').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
+    new SlashCommandBuilder().setName('send').setDescription('Send a custom message with delay')
+        .addStringOption(o => o.setName('message').setDescription('Message content').setRequired(true))
+        .addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'}))
+        .addIntegerOption(o => o.setName('delay_send').setDescription('Delay time (minutes)').setRequired(true))
+        .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true))
+        .addStringOption(o => o.setName('color').setDescription('Box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
 
-    new SlashCommandBuilder().setName('ads_set').setDescription('إعداد إعلان تلقائي جديد')
-        .addStringOption(o => o.setName('name').setDescription('اسم الإعلان').setRequired(true))
-        .addStringOption(o => o.setName('text').setDescription('محتوى الإعلان').setRequired(true))
-        .addChannelOption(o => o.setName('channel').setDescription('قناة الإعلان').addChannelTypes(ChannelType.GuildText).setRequired(true))
-        .addIntegerOption(o => o.setName('interval').setDescription('الإرسال كل كم دقيقة').setRequired(true))
-        .addIntegerOption(o => o.setName('delete').setDescription('الحذف بعد كم دقيقة').setRequired(true))
-        .addStringOption(o => o.setName('style').setDescription('الشكل').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    new SlashCommandBuilder().setName('ads_set').setDescription('Setup a new auto-ad')
+        .addStringOption(o => o.setName('name').setDescription('Ad name').setRequired(true))
+        .addStringOption(o => o.setName('text').setDescription('Ad content').setRequired(true))
+        .addChannelOption(o => o.setName('channel').setDescription('Ad channel').addChannelTypes(ChannelType.GuildText).setRequired(true))
+        .addIntegerOption(o => o.setName('interval').setDescription('Send every (minutes)').setRequired(true))
+        .addIntegerOption(o => o.setName('delete').setDescription('Delete after (minutes)').setRequired(true))
+        .addStringOption(o => o.setName('style').setDescription('Style').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
-    new SlashCommandBuilder().setName('ads_edit').setDescription('تعديل أو حذف إعلان قائم')
-        .addStringOption(o => o.setName('name').setDescription('اختر اسم الإعلان').setRequired(true).setAutocomplete(true))
-        .addStringOption(o => o.setName('text').setDescription('النص الجديد (اختياري)').setRequired(false))
-        .addChannelOption(o => o.setName('channel').setDescription('القناة الجديدة (اختياري)').addChannelTypes(ChannelType.GuildText).setRequired(false))
-        .addIntegerOption(o => o.setName('interval').setDescription('الوقت الجديد (اختياري)').setRequired(false))
-        .addIntegerOption(o => o.setName('delete').setDescription('وقت الحذف الجديد (اختياري)').setRequired(false))
-        .addStringOption(o => o.setName('style').setDescription('الشكل الجديد (اختياري)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    new SlashCommandBuilder().setName('ads_edit').setDescription('Edit or delete an existing ad')
+        .addStringOption(o => o.setName('name').setDescription('Choose ad name').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('text').setDescription('New text (Optional)').setRequired(false))
+        .addChannelOption(o => o.setName('channel').setDescription('New channel (Optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
+        .addIntegerOption(o => o.setName('interval').setDescription('New interval (Optional)').setRequired(false))
+        .addIntegerOption(o => o.setName('delete').setDescription('New delete time (Optional)').setRequired(false))
+        .addStringOption(o => o.setName('style').setDescription('New style (Optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
 
-    new SlashCommandBuilder().setName('translate').setDescription('ترجمة نصوص')
-        .addStringOption(o => o.setName('text').setDescription('النص').setRequired(true))
-        .addStringOption(o => o.setName('to').setDescription('كود اللغة (مثال: ar)').setRequired(true)),
+    new SlashCommandBuilder().setName('translate').setDescription('Translate text')
+        .addStringOption(o => o.setName('text').setDescription('Text').setRequired(true))
+        .addStringOption(o => o.setName('to').setDescription('Language code (e.g: ar)').setRequired(true)),
 
-    new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت سريع')
-        .addStringOption(o => o.setName('question').setDescription('سؤال التصويت').setRequired(true)),
+    new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote')
+        .addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
 ].map(c => c.toJSON());
 
 // --- وظيفة تشغيل حلقة الإعلانات ---
@@ -206,7 +207,7 @@ client.on('interactionCreate', async (interaction) => {
                 const delay = options.getInteger('delay_send');
                 const delAfter = options.getInteger('delete_after');
                 const color = options.getString('color') || '#3498db';
-                await interaction.reply({ content: `✅ ستصل الرسالة خلال ${delay} دقيقة.`, ephemeral: true });
+                await interaction.reply({ content: `✅ Message will arrive in ${delay} minute(s).`, ephemeral: true });
                 setTimeout(async () => {
                     let sent;
                     if (style === 'embed') { sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(msg).setColor(color)] }).catch(() => {}); }
@@ -219,42 +220,42 @@ client.on('interactionCreate', async (interaction) => {
                 const data = { name, text: options.getString('text'), channelId: options.getChannel('channel').id, interval: options.getInteger('interval'), deleteAfter: options.getInteger('delete'), style: options.getString('style'), timer: null, lastMsgId: null };
                 adsStorage.set(name, data);
                 startAdLoop(name, guild.id);
-                return await interaction.reply({ content: `✅ تم تفعيل إعلان: **${name}**`, ephemeral: true });
+                return await interaction.reply({ content: `✅ Ad activated: **${name}**`, ephemeral: true });
             }
             if (commandName === 'ads_edit') {
                 const name = options.getString('name');
                 const ad = adsStorage.get(name);
-                if (!ad) return await interaction.reply({ content: "❌ هذا الإعلان غير موجود.", ephemeral: true });
+                if (!ad) return await interaction.reply({ content: "❌ This ad does not exist.", ephemeral: true });
                 if (options.getString('text')) ad.text = options.getString('text');
                 if (options.getChannel('channel')) ad.channelId = options.getChannel('channel').id;
                 if (options.getInteger('interval')) ad.interval = options.getInteger('interval');
                 if (options.getInteger('delete') !== null) ad.deleteAfter = options.getInteger('delete');
                 if (options.getString('style')) ad.style = options.getString('style');
                 startAdLoop(name, guild.id);
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('حذف الإعلان نهائياً 🗑️').setStyle(ButtonStyle.Danger));
-                return await interaction.reply({ content: `⚙️ تم تحديث إعلان **${name}** بنجاح.`, components: [row], ephemeral: true });
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete Ad Permanently 🗑️').setStyle(ButtonStyle.Danger));
+                return await interaction.reply({ content: `⚙️ Ad **${name}** updated successfully.`, components: [row], ephemeral: true });
             }
             if (commandName === 'clear') {
                 await interaction.deferReply({ ephemeral: true });
                 await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
-                return await interaction.editReply('تم تنظيف الشات بنجاح! 🧹');
+                return await interaction.editReply('Chat cleared successfully! 🧹');
             }
             if (commandName === 'translate') {
                 await interaction.deferReply();
                 const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
                 const json = await res.json();
-                return await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 ترجمة').setDescription(json[0].map(i => i[0]).join('')).setColor('#4285F4')] });
+                return await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 Translation').setDescription(json[0].map(i => i[0]).join('')).setColor('#4285F4')] });
             }
             if (commandName === 'vote') {
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('v_yes').setLabel('نعم ✅').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('v_no').setLabel('لا ❌').setStyle(ButtonStyle.Danger));
-                return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('تصويت جديد').setDescription(options.getString('question')).setColor('#f1c40f')], components: [row] });
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('v_yes').setLabel('Yes ✅').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('v_no').setLabel('No ❌').setStyle(ButtonStyle.Danger));
+                return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('New Vote').setDescription(options.getString('question')).setColor('#f1c40f')], components: [row] });
             }
         } catch (e) { console.error(e); }
     } 
     else if (interaction.isButton() && interaction.customId.startsWith('stop_ad_')) {
         const name = interaction.customId.replace('stop_ad_', '');
         const ad = adsStorage.get(name);
-        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ تم حذف إعلان **${name}** من النظام.`, components: [], ephemeral: true }); }
+        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ Ad **${name}** deleted from system.`, components: [], ephemeral: true }); }
     }
 });
 
