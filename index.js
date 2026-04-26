@@ -91,7 +91,8 @@ client.on('messageCreate', async (message) => {
 
     try {
         await message.channel.sendTyping();
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // السطر المعدل لضمان عمل الموديل (flash-latest)
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
         
         // استخدام دمج النصوص لضمان استقرار الاستجابة
         const result = await model.generateContent(systemPrompt + "\n\nUser Question: " + message.content);
@@ -157,7 +158,7 @@ client.on('interactionCreate', async (interaction) => {
                     let sent;
                     if (style === 'embed') sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(msg).setColor(color)] }).catch(() => {});
                     else sent = await channel.send(msg).catch(() => {});
-                    if (sent && delAfter > 0) setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
+                    if (sent && delAfter > 0) setTimeout(() => sent.delete().catch(() => {), delAfter * 60000);
                 }, delay * 60000);
             }
             if (commandName === 'ads_set') {
