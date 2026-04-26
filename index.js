@@ -62,7 +62,7 @@ async function getMistralResponse(userMessage) {
             })
         });
         const data = await response.json();
-        return data.choices?.[0]?.message?.content || `انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>`;
+        return data.choices?.[0]?.message?.content || `I don't know, you have to ask onwer! <@${CONFIG.OWNER_ID}>`;
     } catch (err) {
         return `انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>`;
     }
