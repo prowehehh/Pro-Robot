@@ -86,8 +86,17 @@ client.on('messageCreate', async (message) => {
 
     try {
         await message.channel.sendTyping();
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-        const result = await model.generateContent(systemPrompt + "\n\nUser Question: " + message.content);
+        // التعديل هنا: استخدام الموديل بطريقة الـ Chat عشان يكون أسرع وأدق
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        const chat = model.startChat({
+            history: [
+                { role: "user", parts: [{ text: systemPrompt }] },
+                { role: "model", parts: [{ text: "Understood. I am Pro Security System AI ready to help." }] },
+            ],
+        });
+
+        const result = await chat.sendMessage(message.content);
         const response = await result.response;
         const text = response.text();
 
@@ -107,7 +116,7 @@ client.on('messageCreate', async (message) => {
         }
     } catch (e) { 
         console.error("AI Error:", e);
-        await message.reply("عذراً، حدث خطأ في الاتصال بالـ AI. حاول مرة أخرى.");
+        await message.reply("عذراً، حدث خطأ في الاتصال بالـ AI. تأكد من إعدادات المنطقة في Railway وحاول مرة أخرى.");
     }
 });
 
