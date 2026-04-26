@@ -45,11 +45,16 @@ async function getMistralResponse(userMessage) {
             body: JSON.stringify({
                 model: "mistral-tiny",
                 messages: [
-                    { role: "system", content: `You are an AI for "Pro Security System". Support all languages. 
-                    Server Info: Created 15/03/2026, Location: Egypt, Owner: <@${CONFIG.OWNER_ID}>.
-                    Ranks: @Ultimate (1.2$ + missions in https://discord.com/channels/1482874760940486699/1482934834899714048), @YouTuber (Make ad), @Booster Gold (Boost server), @Vip (Trust/Experience), @Helper (Help server).
-                    Rules: No insults, No ads, No harmful links, No commands, No exploits. Verify account required.
-                    If unknown: "انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>". Be polite and answer greetings.` },
+                    { role: "system", content: `You are an AI for "Pro Security System". Support all languages in the world. 
+                    - Server Information: Created on 15/03/2026, Location: Egypt, Owner: <@${CONFIG.OWNER_ID}>.
+                    - Ranks Information:
+                      * @Ultimate: Pay 1.2$ + missions in https://discord.com/channels/1482874760940486699/1482934834899714048
+                      * @YouTuber: Make an advertisement for this server.
+                      * @Booster Gold: Boost the server.
+                      * @Vip: Needs trust and experience (for 3rd-degree members).
+                      * @Helper: Help the server with required tasks.
+                    - Server Rules: No insults/swearing. No sharing district/harmful links/files. Emojis/Stickers/GIFs allowed. Slowmode enabled for members. No advertising/promotions. No commands/exploiting errors. Account verification required. No sharing server info. Full rules: https://discord.com/channels/1482874760940486699/1484639863411183636
+                    - Behavior: Answer normal greetings (Hi/Hello/مرحبا). If unknown, say: "انا لا اعرف اسال صاحب السيرفر <@${CONFIG.OWNER_ID}>". Respond in the user's language.` },
                     { role: "user", content: userMessage }
                 ]
             })
@@ -147,20 +152,26 @@ client.on('messageCreate', async (message) => {
             }, 600000); 
         }
 
-        if (message.content.includes('rank') || message.content.includes('رتبة')) {
-            const embed = new EmbedBuilder().setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510").setColor('#3498db');
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('open_rank_modal').setLabel('Submit').setStyle(ButtonStyle.Primary));
-            const sent = await message.channel.send({ embeds: [embed], components: [row] });
-            setTimeout(() => sent.delete().catch(() => {}), 600000);
+        // إظهار رسالة الـ Submit عند طلب رتبة
+        if (message.content.includes('rank') || message.content.includes('رتبة') || message.content.includes('رتبه')) {
+            const embed = new EmbedBuilder()
+                .setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510")
+                .setColor('#3498db');
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('open_rank_modal').setLabel('Submit').setStyle(ButtonStyle.Primary)
+            );
+            const sentModalMsg = await message.channel.send({ embeds: [embed], components: [row] });
+            setTimeout(() => sentModalMsg.delete().catch(() => {}), 600000);
         }
     } catch (e) { console.error(e); }
 });
 
 client.on('interactionCreate', async (interaction) => {
+    // التعامل مع الـ Modal (Submit)
     if (interaction.isButton() && interaction.customId === 'open_rank_modal') {
         const modal = new ModalBuilder().setCustomId('rank_modal').setTitle('Rank Request');
-        const userField = new TextInputBuilder().setCustomId('xbox_user').setLabel("Username").setStyle(TextInputStyle.Short).setPlaceholder("Xbox Name").setRequired(true);
-        const rankField = new TextInputBuilder().setCustomId('rank_type').setLabel("Rank you want").setStyle(TextInputStyle.Short).setPlaceholder("e.g. Ultimate").setRequired(true);
+        const userField = new TextInputBuilder().setCustomId('xbox_user').setLabel("Username").setStyle(TextInputStyle.Short).setPlaceholder("Write your Xbox username").setRequired(true);
+        const rankField = new TextInputBuilder().setCustomId('rank_type').setLabel("Rank you want").setStyle(TextInputStyle.Short).setPlaceholder("Write the rank name").setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(userField), new ActionRowBuilder().addComponents(rankField));
         return await interaction.showModal(modal);
     }
@@ -169,8 +180,8 @@ client.on('interactionCreate', async (interaction) => {
         const xbox = interaction.fields.getTextInputValue('xbox_user');
         const rank = interaction.fields.getTextInputValue('rank_type');
         const logCh = client.channels.cache.get(CONFIG.SUBMIT_LOG);
-        if (logCh) await logCh.send(`🔔 New Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
-        return await interaction.reply({ content: "✅ Your request has been sent!", ephemeral: true });
+        if (logCh) await logCh.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
+        return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
 
     if (interaction.isAutocomplete()) {
@@ -205,6 +216,19 @@ client.on('interactionCreate', async (interaction) => {
                 startAdLoop(name, guild.id);
                 return await interaction.reply({ content: `✅ تم تفعيل إعلان: **${name}**`, ephemeral: true });
             }
+            if (commandName === 'ads_edit') {
+                const name = options.getString('name');
+                const ad = adsStorage.get(name);
+                if (!ad) return await interaction.reply({ content: "❌ هذا الإعلان غير موجود.", ephemeral: true });
+                if (options.getString('text')) ad.text = options.getString('text');
+                if (options.getChannel('channel')) ad.channelId = options.getChannel('channel').id;
+                if (options.getInteger('interval')) ad.interval = options.getInteger('interval');
+                if (options.getInteger('delete') !== null) ad.deleteAfter = options.getInteger('delete');
+                if (options.getString('style')) ad.style = options.getString('style');
+                startAdLoop(name, guild.id);
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('حذف الإعلان نهائياً 🗑️').setStyle(ButtonStyle.Danger));
+                return await interaction.reply({ content: `⚙️ تم تحديث إعلان **${name}** بنجاح.`, components: [row], ephemeral: true });
+            }
             if (commandName === 'clear') {
                 await interaction.deferReply({ ephemeral: true });
                 await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
@@ -225,27 +249,29 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.isButton() && interaction.customId.startsWith('stop_ad_')) {
         const name = interaction.customId.replace('stop_ad_', '');
         const ad = adsStorage.get(name);
-        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ تم حذف إعلان **${name}**`, components: [], ephemeral: true }); }
+        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ تم حذف إعلان **${name}** من النظام.`, components: [], ephemeral: true }); }
     }
 });
 
+// --- نظام الترحيب والرتب التلقائية ---
 client.on('guildMemberAdd', async (member) => {
     const role = member.guild.roles.cache.get(CONFIG.AUTO_ROLE);
     if (role) await member.roles.add(role).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝘃er 𝐟𝐨𝐫 𝐌𝐂 👑\n- You are now from team PRO! 🥳`).setColor('#3498db');
+        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝘃er 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read info server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
-        if (m) setTimeout(() => m.delete().catch(() => {}), 86400000);
+        if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
     updateLiveInfo(member.guild);
 });
 
+// --- نظام تحديث المعلومات (Info) ---
 async function updateLiveInfo(guild) {
     if (!guild) guild = client.guilds.cache.first();
     const infoCh = client.channels.cache.get(CONFIG.INFO_CH);
     if (!infoCh || !guild) return;
-    const infoEmbed = new EmbedBuilder().setDescription(`Information about server:-\n• Owner: <@${CONFIG.OWNER_ID}>\n• Total Members: ${guild.memberCount}`).setColor('#3498db');
+    const infoEmbed = new EmbedBuilder().setDescription(`[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]\nInformation about server:-\n• Owner: <@${CONFIG.OWNER_ID}>\n• Robot: <@${CONFIG.BOT_ID}>\n• Server from: Egypt\n• Date Server: 15/03/2026\n• Total Members: ${guild.memberCount}\n• Ranks:\n→ [<@&1482883802186514615>, <@&1486093106465210531>, <@&1482884804063268984>, <@&1482885169949052948>, <@&1482885029557178592>]\n[!]≈≈≈≈≈≈≈≈≈≈≈≈≈|!|≈≈≈≈≈≈≈≈≈≈≈≈≈[!]`).setColor('#3498db');
     try {
         const msgs = await infoCh.messages.fetch({ limit: 10 }).catch(() => null);
         if (msgs) { msgs.filter(m => m.author.id === client.user.id).forEach(async m => await m.delete().catch(() => {})); }
