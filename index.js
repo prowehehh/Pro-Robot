@@ -124,7 +124,7 @@ client.on('interactionCreate', async (interaction) => {
         const user = interaction.fields.getTextInputValue('x_name');
         const rank = interaction.fields.getTextInputValue('r_name');
         const log = client.channels.cache.get(CONFIG.SUBMIT_LOG);
-        if (log) await log.send(`🔔 <@${CONFIG.OWNER_ID}> New Rank Request from <@${interaction.user.id}>:\n**Username:** ${user}\n**Rank:** ${rank}`);
+        if (log) await log.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${user}\n**Rank:** ${rank}`);
         return await interaction.reply({ content: "Sent!", ephemeral: true });
     }
 
