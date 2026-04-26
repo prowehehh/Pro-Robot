@@ -5,10 +5,9 @@ const {
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-const { GoogleGenerativeAI } = require("@google/generative-ai"); // إضافة مكتبة الـ AI
+const { GoogleGenerativeAI } = require("@google/generative-ai"); 
 const app = express();
 
-// تشغيل السيرفر عشان البوت يفضل صاحي 24 ساعة
 app.get('/', (req, res) => res.send('Pro Security System is Online! 🛡️'));
 app.listen(process.env.PORT || 3000);
 
@@ -21,32 +20,29 @@ const client = new Client({
     ],
 });
 
-// إعدادات السيرفر الخاصة بك
 const CONFIG = {
     WELCOME_CH: '1482881348204101768',
     INFO_CH: '1484639863411183636',
     AUTO_ROLE: '1482883802186514615',
     OWNER_ID: '1134146616857731173',
     BOT_ID: '1495419259147386920',
-    HELP_CH: '1497909981725593712', // قناة المساعدة
-    SUBMIT_LOG: '1494367980702797935' // قناة لوج الرتب
+    HELP_CH: '1497909981725593712', 
+    SUBMIT_LOG: '1494367980702797935' 
 };
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY); 
 const adsStorage = new Map();
 
-// --- تسجيل جميع الأوامر بدون استثناء ---
 const commands = [
     new SlashCommandBuilder().setName('ping').setDescription('سرعة اتصال البوت'),
     new SlashCommandBuilder().setName('clear').setDescription('تنظيف الشات').addIntegerOption(o => o.setName('amount').setDescription('عدد الرسائل').setRequired(true)),
     new SlashCommandBuilder().setName('send').setDescription('إرسال رسالة مخصصة بوقت محدد').addStringOption(o => o.setName('message').setDescription('محتوى الرسالة').setRequired(true)).addStringOption(o => o.setName('style').setDescription('شكل الرسالة').setRequired(true).addChoices({name:'مربع (Box)',value:'embed'},{name:'عادي (Normal)',value:'normal'})).addIntegerOption(o => o.setName('delay_send').setDescription('وقت الانتظار قبل الإرسال (بالدقائق)').setRequired(true)).addIntegerOption(o => o.setName('delete_after').setDescription('وقت الحذف التلقائي (بالدقائق)').setRequired(true)).addStringOption(o => o.setName('color').setDescription('لون المربع').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
     new SlashCommandBuilder().setName('ads_set').setDescription('إعداد إعلان تلقائي جديد').addStringOption(o => o.setName('name').setDescription('اسم الإعلان').setRequired(true)).addStringOption(o => o.setName('text').setDescription('محتوى الإعلان').setRequired(true)).addChannelOption(o => o.setName('channel').setDescription('قناة الإعلان').addChannelTypes(ChannelType.GuildText).setRequired(true)).addIntegerOption(o => o.setName('interval').setDescription('إرسال كل كم دقيقة').setRequired(true)).addIntegerOption(o => o.setName('delete').setDescription('الحذف بعد كم دقيقة').setRequired(true)).addStringOption(o => o.setName('style').setDescription('الشكل').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
-    new SlashCommandBuilder().setName('ads_edit').setDescription('تعديل أو حذف إعلان قائم').addStringOption(o => o.setName('name').setDescription('اختر اسم الإعلان').setRequired(true).setAutocomplete(true)).addStringOption(o => o.setName('text').setDescription('النص الجديد (اختياري)').setRequired(false)).addChannelOption(o => o.setName('channel').setDescription('القناة الجديدة (اختياري)').addChannelTypes(ChannelType.GuildText).setRequired(false)).addIntegerOption(o => o.setName('interval').setDescription('الوقت الجديد (اختياري)').setRequired(false)).addIntegerOption(o => o.setName('delete').setDescription('وقت الحذف الجديد (اختياري)').setRequired(false)).addStringOption(o => o.setName('style').setDescription('الشكل الجديد (اختياري)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    new SlashCommandBuilder().setName('ads_edit').setDescription('تعديل أو حذف إعلان قائم').addStringOption(o => o.setName('name').setDescription('اختر اسم الإعلان').setRequired(true).setAutocomplete(true)).addStringOption(o => o.setName('text').setDescription('النص الجديد (اختياري)').setRequired(false)).addChannelOption(o => o.setName('channel').setDescription('القناة الجديدة (اختياري)').addChannelTypes(ChannelType.GuildText).setRequired(false)).addIntegerOption(o => o.setName('interval').setDescription('الوقت الجديد (اختياري)').setRequired(false)).addIntegerOption(o => o.setName('delete').setDescription('الوقت الجديد (اختياري)').setRequired(false)).addStringOption(o => o.setName('style').setDescription('الشكل الجديد (اختياري)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
     new SlashCommandBuilder().setName('translate').setDescription('ترجمة نصوص').addStringOption(o => o.setName('text').setDescription('النص').setRequired(true)).addStringOption(o => o.setName('to').setDescription('كود اللغة (مثال: ar)').setRequired(true)),
     new SlashCommandBuilder().setName('vote').setDescription('عمل تصويت سريع').addStringOption(o => o.setName('question').setDescription('سؤال التصويت').setRequired(true)),
 ].map(c => c.toJSON());
 
-// --- وظيفة تشغيل حلقة الإعلانات ---
 function startAdLoop(adName, guildId) {
     const ad = adsStorage.get(adName);
     if (!ad) return;
@@ -79,7 +75,6 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// --- نظام الـ AI وقناة Help Me المعدل ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot || message.channel.id !== CONFIG.HELP_CH) return;
 
@@ -91,10 +86,7 @@ client.on('messageCreate', async (message) => {
 
     try {
         await message.channel.sendTyping();
-        // السطر المعدل لضمان عمل الموديل (flash-latest)
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-        
-        // استخدام دمج النصوص لضمان استقرار الاستجابة
         const result = await model.generateContent(systemPrompt + "\n\nUser Question: " + message.content);
         const response = await result.response;
         const text = response.text();
@@ -158,7 +150,7 @@ client.on('interactionCreate', async (interaction) => {
                     let sent;
                     if (style === 'embed') sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(msg).setColor(color)] }).catch(() => {});
                     else sent = await channel.send(msg).catch(() => {});
-                    if (sent && delAfter > 0) setTimeout(() => sent.delete().catch(() => {), delAfter * 60000);
+                    if (sent && delAfter > 0) setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
                 }, delay * 60000);
             }
             if (commandName === 'ads_set') {
