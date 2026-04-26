@@ -78,6 +78,7 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot || message.channel.id !== CONFIG.HELP_CH) return;
 
+    // تعليمات نظام الـ AI
     const systemPrompt = `You are an AI for "Pro Security System". Support all languages. 
     Server Info: Created 15/03/2026, Location: Egypt, Owner: <@${CONFIG.OWNER_ID}>.
     Roles: @Ultimate, @YouTuber, @Booster Gold, @Vip, @Helper.
@@ -86,13 +87,15 @@ client.on('messageCreate', async (message) => {
 
     try {
         await message.channel.sendTyping();
-        // التعديل هنا: استخدام الموديل بطريقة الـ Chat عشان يكون أسرع وأدق
+        
+        // استخدام موديل Gemini-1.5-Flash
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         
+        // إعداد جلسة المحادثة لضمان استجابة دقيقة للـ Prompt
         const chat = model.startChat({
             history: [
                 { role: "user", parts: [{ text: systemPrompt }] },
-                { role: "model", parts: [{ text: "Understood. I am Pro Security System AI ready to help." }] },
+                { role: "model", parts: [{ text: "Understood. I am Pro Security System AI." }] },
             ],
         });
 
@@ -102,12 +105,14 @@ client.on('messageCreate', async (message) => {
 
         if (text) {
             const botMsg = await message.reply(text);
+            // حذف الرسائل بعد 10 دقائق لتنظيف القناة
             setTimeout(() => {
                 message.delete().catch(() => {});
                 botMsg.delete().catch(() => {});
             }, 600000);
         }
 
+        // كود الرتب (Rank System)
         if (message.content.toLowerCase().includes('rank') || message.content.includes('رتبة')) {
             const embed = new EmbedBuilder().setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510").setColor('#3498db');
             const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('open_submit').setLabel('Submit').setStyle(ButtonStyle.Primary));
@@ -120,6 +125,7 @@ client.on('messageCreate', async (message) => {
     }
 });
 
+// التعامل مع الأزرار والمودال (Interactions)
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'open_submit') {
         const modal = new ModalBuilder().setCustomId('sub_m').setTitle('Rank Request');
@@ -209,6 +215,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// الترحيب بالأعضاء الجدد
 client.on('guildMemberAdd', async (member) => {
     const role = member.guild.roles.cache.get(CONFIG.AUTO_ROLE);
     if (role) await member.roles.add(role).catch(() => {});
@@ -221,6 +228,7 @@ client.on('guildMemberAdd', async (member) => {
     updateLiveInfo(member.guild);
 });
 
+// تحديث معلومات السيرفر تلقائياً
 async function updateLiveInfo(guild) {
     if (!guild) guild = client.guilds.cache.first();
     const infoCh = client.channels.cache.get(CONFIG.INFO_CH);
