@@ -86,7 +86,7 @@ client.on('messageCreate', async (message) => {
 
     try {
         await message.channel.sendTyping();
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent(systemPrompt + "\n\nUser Question: " + message.content);
         const response = await result.response;
         const text = response.text();
