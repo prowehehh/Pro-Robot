@@ -28,7 +28,8 @@ const CONFIG = {
     OWNER_ID: '1134146616857731173',
     BOT_ID: '1495419259147386920',
     HELP_CH: '1497909981725593712', // قناة المساعدة للـ AI
-    SUBMIT_LOG: '1494367980702797935' // قناة سجل الطلبات
+    SUBMIT_LOG: '1494367980702797935', // قناة سجل الطلبات
+    ROLE_CHANNEL: '1482874761951576228' // القناة المطلوبة لأمر الرتب
 };
 
 const adsStorage = new Map();
@@ -105,6 +106,11 @@ const commands = [
 
     new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote')
         .addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
+
+    // إضافة أمر الرتب الجديد
+    new SlashCommandBuilder().setName('role').setDescription('Select a member and a rank')
+        .addUserOption(o => o.setName('user').setDescription('The member to give the rank to').setRequired(true))
+        .addRoleOption(o => o.setName('rank').setDescription('The rank to give').setRequired(true)),
 ].map(c => c.toJSON());
 
 // --- وظيفة تشغيل حلقة الإعلانات ---
@@ -201,6 +207,29 @@ client.on('interactionCreate', async (interaction) => {
         const { commandName, options, guild, channel } = interaction;
         try {
             if (commandName === 'ping') return await interaction.reply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
+            
+            // تنفيذ أمر الرتب الجديد
+            if (commandName === 'role') {
+                const targetUser = options.getMember('user');
+                const targetRole = options.getRole('rank');
+                const roleChan = guild.channels.cache.get(CONFIG.ROLE_CHANNEL);
+
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+                    return await interaction.reply({ content: "❌ You don't have permission to use this command!", ephemeral: true });
+                }
+
+                await targetUser.roles.add(targetRole).catch(e => console.error(e));
+                
+                const roleEmbed = new EmbedBuilder()
+                    .setTitle('✨ New Rank Given')
+                    .setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`)
+                    .setColor('#3498db')
+                    .setTimestamp();
+
+                if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
+                return await interaction.reply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.`, ephemeral: true });
+            }
+
             if (commandName === 'send') {
                 const msg = options.getString('message');
                 const style = options.getString('style');
