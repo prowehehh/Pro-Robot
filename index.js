@@ -32,6 +32,10 @@ const CONFIG = {
 };
 
 const adsStorage = new Map();
+const warnStorage = new Map(); // لتخزين عدد مرات الشتم لكل شخص
+
+// --- نظام منع الشتائم الثقيلة (Automod) ---
+const BAD_WORDS = ['الكلمة1', 'الكلمة2', 'الكلمة3']; // ضيف هنا الشتائم اللي "أنت فاهمها"
 
 // --- وظيفة الـ AI (Mistral) المحترف ---
 async function getMistralResponse(userMessage) {
@@ -145,9 +149,29 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// التعامل مع رسائل الـ AI
+// التعامل مع رسائل الـ AI والـ Automod
 client.on('messageCreate', async (message) => {
-    if (message.author.bot || message.channel.id !== CONFIG.HELP_CH) return;
+    if (message.author.bot || !message.guild) return;
+
+    // --- فحص الشتائم أولاً ---
+    const hasBadWord = BAD_WORDS.some(word => message.content.toLowerCase().includes(word));
+    if (hasBadWord) {
+        await message.delete().catch(() => {});
+        let count = (warnStorage.get(message.author.id) || 0) + 1;
+        warnStorage.set(message.author.id, count);
+
+        if (count === 1) {
+            await message.member.timeout(5 * 60 * 1000, 'شتم في السيرفر').catch(() => {});
+            const m = await message.channel.send(`⚠️ <@${message.author.id}>، تم إسكاتك لمدة 5 دقائق بسبب الشتم. المرة القادمة ستطرد نهائياً!`);
+            setTimeout(() => m.delete().catch(() => {}), 10000);
+        } else {
+            await message.member.ban({ reason: 'تكرار الشتم الثقيل' }).catch(() => {});
+            message.channel.send(`🚫 تم طرد <@${message.author.id}> نهائياً من السيرفر بسبب تكرار الشتم.`);
+        }
+        return;
+    }
+
+    if (message.channel.id !== CONFIG.HELP_CH) return;
 
     try {
         await message.channel.sendTyping();
