@@ -171,33 +171,44 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    if (message.channel.id !== CONFIG.HELP_CH) return;
+    // ميزة الرد عند المنشن أو في قناة المساعدة
+    const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
+    const isMentioned = message.mentions.has(client.user.id);
 
-    try {
-        await message.channel.sendTyping();
-        const text = await getMistralResponse(message.content);
-        if (text) {
-            const botMsg = await message.reply(text);
-            // مسح الرسائل بعد 5 دقائق (300,000 مللي ثانية)
-            setTimeout(() => {
-                message.delete().catch(() => {});
-                botMsg.delete().catch(() => {});
-            }, 300000); 
-        }
+    if (isHelpChannel || isMentioned) {
+        try {
+            await message.channel.sendTyping();
+            
+            // تنظيف النص من المنشن قبل إرساله للـ AI
+            const cleanContent = message.content.replace(`<@!${client.user.id}>`, '').replace(`<@${client.user.id}>`, '').trim();
+            
+            const text = await getMistralResponse(cleanContent || message.content);
+            if (text) {
+                const botMsg = await message.reply(text);
+                
+                // مسح الرسائل بعد 5 دقائق فقط إذا كانت في قناة المساعدة
+                if (isHelpChannel) {
+                    setTimeout(() => {
+                        message.delete().catch(() => {});
+                        botMsg.delete().catch(() => {});
+                    }, 300000); 
+                }
+            }
 
-        // إظهار رسالة الـ Submit عند طلب رتبة
-        const rankKeywords = ['rank', 'role', 'رتبة', 'رتبه', 'رتب'];
-        if (rankKeywords.some(key => message.content.toLowerCase().includes(key))) {
-            const embed = new EmbedBuilder()
-                .setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510")
-                .setColor('#3498db');
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('open_rank_modal').setLabel('Submit').setStyle(ButtonStyle.Primary)
-            );
-            const sentModalMsg = await message.channel.send({ embeds: [embed], components: [row] });
-            setTimeout(() => sentModalMsg.delete().catch(() => {}), 300000);
-        }
-    } catch (e) { console.error(e); }
+            // إظهار رسالة الـ Submit عند طلب رتبة
+            const rankKeywords = ['rank', 'role', 'رتبة', 'رتبه', 'رتب'];
+            if (rankKeywords.some(key => message.content.toLowerCase().includes(key))) {
+                const embed = new EmbedBuilder()
+                    .setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510")
+                    .setColor('#3498db');
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('open_rank_modal').setLabel('Submit').setStyle(ButtonStyle.Primary)
+                );
+                const sentModalMsg = await message.channel.send({ embeds: [embed], components: [row] });
+                if (isHelpChannel) setTimeout(() => sentModalMsg.delete().catch(() => {}), 300000);
+            }
+        } catch (e) { console.error(e); }
+    }
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -317,7 +328,7 @@ client.on('guildMemberAdd', async (member) => {
     if (role) await member.roles.add(role).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
+        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝒐𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
