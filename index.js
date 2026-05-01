@@ -23,19 +23,21 @@ const client = new Client({
 // إعدادات السيرفر الخاصة بك
 const CONFIG = {
     WELCOME_CH: '1482881348204101768',
-    AUTO_ROLE: '1482883802186514615',
+    AUTO_ROLE: '1482883802186514615', // الرتبة الأولى
+    AUTO_ROLE_2: '1499510435639197887', // الرتبة الثانية الجديدة
     OWNER_ID: '1134146616857731173',
     BOT_ID: '1495419259147386920',
     HELP_CH: '1497909981725593712', // قناة المساعدة للـ AI
     SUBMIT_LOG: '1494367980702797935', // قناة سجل الطلبات
-    ROLE_CHANNEL: '1482874761951576228' // القناة المطلوبة لأمر الرتب
+    ROLE_CHANNEL: '1482874761951576228', // القناة المطلوبة لأمر الرتب
+    INFO_CH: '1484641160394702958' // تأكد من إضافة ID قناة الـ Info هنا
 };
 
 const adsStorage = new Map();
 const warnStorage = new Map(); // لتخزين عدد مرات الشتم لكل شخص
 
 // --- نظام منع الشتائم الثقيلة (Automod) ---
-const BAD_WORDS = ['الكلمة1', 'الكلمة2', 'الكلمة3']; // ضيف هنا الشتائم اللي "أنت فاهمها"
+const BAD_WORDS = ['الكلمة1', 'الكلمة2', 'الكلمة3']; 
 
 // --- وظيفة الـ AI (Mistral) المحترف ---
 async function getMistralResponse(userMessage) {
@@ -47,7 +49,7 @@ async function getMistralResponse(userMessage) {
                 'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
             },
             body: JSON.stringify({
-                model: "mistral-small", // موديل أذكى للردود الاحترافية
+                model: "mistral-small",
                 messages: [
                     { role: "system", content: `You are "Pro Robot", the elite professional AI assistant of this server.
                     - Server Name: "Pro Server for MC".
@@ -76,47 +78,15 @@ async function getMistralResponse(userMessage) {
 // --- تسجيل جميع الأوامر بدون استثناء ---
 const commands = [
     new SlashCommandBuilder().setName('ping').setDescription('Bot latency speed'),
-    
-    new SlashCommandBuilder().setName('clear').setDescription('Clear the chat')
-        .addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
-    
-    new SlashCommandBuilder().setName('send').setDescription('Send a custom message with specific time')
-        .addStringOption(o => o.setName('message').setDescription('Message content').setRequired(true))
-        .addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'}))
-        .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes)').setRequired(true))
-        .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true))
-        .addStringOption(o => o.setName('color').setDescription('Box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
-
-    new SlashCommandBuilder().setName('ads_set').setDescription('Setup a new auto-ad')
-        .addStringOption(o => o.setName('name').setDescription('Ad name').setRequired(true))
-        .addStringOption(o => o.setName('text').setDescription('Ad content').setRequired(true))
-        .addChannelOption(o => o.setName('channel').setDescription('Ad channel').addChannelTypes(ChannelType.GuildText).setRequired(true))
-        .addIntegerOption(o => o.setName('interval').setDescription('Send every X minutes').setRequired(true))
-        .addIntegerOption(o => o.setName('delete').setDescription('Delete after X minutes').setRequired(true))
-        .addStringOption(o => o.setName('style').setDescription('Style').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
-
-    new SlashCommandBuilder().setName('ads_edit').setDescription('Edit or delete an existing ad')
-        .addStringOption(o => o.setName('name').setDescription('Choose ad name').setRequired(true).setAutocomplete(true))
-        .addStringOption(o => o.setName('text').setDescription('New text (optional)').setRequired(false))
-        .addChannelOption(o => o.setName('channel').setDescription('New channel (optional)').addChannelTypes(ChannelType.GuildText).setRequired(false))
-        .addIntegerOption(o => o.setName('interval').setDescription('New interval (optional)').setRequired(false))
-        .addIntegerOption(o => o.setName('delete').setDescription('New delete time (optional)').setRequired(false))
-        .addStringOption(o => o.setName('style').setDescription('New style (optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
-
-    new SlashCommandBuilder().setName('translate').setDescription('Translate text')
-        .addStringOption(o => o.setName('text').setDescription('The text').setRequired(true))
-        .addStringOption(o => o.setName('to').setDescription('Language code (e.g: ar)').setRequired(true)),
-
-    new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote')
-        .addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
-
-    // إضافة أمر الرتب الجديد
-    new SlashCommandBuilder().setName('role').setDescription('Select a member and a rank')
-        .addUserOption(o => o.setName('user').setDescription('The member to give the rank to').setRequired(true))
-        .addRoleOption(o => o.setName('rank').setDescription('The rank to give').setRequired(true)),
+    new SlashCommandBuilder().setName('clear').setDescription('Clear the chat').addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
+    new SlashCommandBuilder().setName('send').setDescription('Send a custom message with specific time').addStringOption(o => o.setName('message').setDescription('Message content').setRequired(true)).addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'})).addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes)').setRequired(true)).addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true)).addStringOption(o => o.setName('color').setDescription('Box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'})),
+    new SlashCommandBuilder().setName('ads_set').setDescription('Setup a new auto-ad').addStringOption(o => o.setName('name').setDescription('Ad name').setRequired(true)).addStringOption(o => o.setName('text').setDescription('Ad content').setRequired(true)).addChannelOption(o => o.setName('channel').setDescription('Ad channel').addChannelTypes(ChannelType.GuildText).setRequired(true)).addIntegerOption(o => o.setName('interval').setDescription('Send every X minutes').setRequired(true)).addIntegerOption(o => o.setName('delete').setDescription('Delete after X minutes').setRequired(true)).addStringOption(o => o.setName('style').setDescription('Style').setRequired(true).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    new SlashCommandBuilder().setName('ads_edit').setDescription('Edit or delete an existing ad').addStringOption(o => o.setName('name').setDescription('Choose ad name').setRequired(true).setAutocomplete(true)).addStringOption(o => o.setName('text').setDescription('New text (optional)').setRequired(false)).addChannelOption(o => o.setName('channel').setDescription('New channel (optional)').addChannelTypes(ChannelType.GuildText).setRequired(false)).addIntegerOption(o => o.setName('interval').setDescription('New interval (optional)').setRequired(false)).addIntegerOption(o => o.setName('delete').setDescription('New delete time (optional)').setRequired(false)).addStringOption(o => o.setName('style').setDescription('New style (optional)').setRequired(false).addChoices({name:'Box',value:'embed'},{name:'Normal',value:'normal'})),
+    new SlashCommandBuilder().setName('translate').setDescription('Translate text').addStringOption(o => o.setName('text').setDescription('The text').setRequired(true)).addStringOption(o => o.setName('to').setDescription('Language code (e.g: ar)').setRequired(true)),
+    new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote').addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
+    new SlashCommandBuilder().setName('role').setDescription('Select a member and a rank').addUserOption(o => o.setName('user').setDescription('The member to give the rank to').setRequired(true)).addRoleOption(o => o.setName('rank').setDescription('The rank to give').setRequired(true)),
 ].map(c => c.toJSON());
 
-// --- وظيفة تشغيل حلقة الإعلانات ---
 function startAdLoop(adName, guildId) {
     const ad = adsStorage.get(adName);
     if (!ad) return;
@@ -130,15 +100,9 @@ function startAdLoop(adName, guildId) {
             if (old) await old.delete().catch(() => {});
         }
         let sent;
-        if (ad.style === 'embed') {
-            sent = await chan.send({ embeds: [new EmbedBuilder().setDescription(ad.text).setColor('#3498db').setTitle(`📢 ${ad.name}`)] }).catch(() => {});
-        } else {
-            sent = await chan.send(`**📢 ${ad.name}**\n\n${ad.text}`).catch(() => {});
-        }
-        if (sent) {
-            ad.lastMsgId = sent.id;
-            if (ad.deleteAfter > 0) setTimeout(() => sent.delete().catch(() => {}), ad.deleteAfter * 60000);
-        }
+        if (ad.style === 'embed') { sent = await chan.send({ embeds: [new EmbedBuilder().setDescription(ad.text).setColor('#3498db').setTitle(`📢 ${ad.name}`)] }).catch(() => {}); }
+        else { sent = await chan.send(`**📢 ${ad.name}**\n\n${ad.text}`).catch(() => {}); }
+        if (sent) { ad.lastMsgId = sent.id; if (ad.deleteAfter > 0) setTimeout(() => sent.delete().catch(() => {}), ad.deleteAfter * 60000); }
     }, ad.interval * 60000);
 }
 
@@ -149,44 +113,39 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// التعامل مع رسائل الـ AI والـ Automod
+// التعامل مع رسائل الـ AI والـ Automod والـ Mention
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // --- فحص الشتائم أولاً ---
+    // --- فحص الشتائم ---
     const hasBadWord = BAD_WORDS.some(word => message.content.toLowerCase().includes(word));
     if (hasBadWord) {
         await message.delete().catch(() => {});
         let count = (warnStorage.get(message.author.id) || 0) + 1;
         warnStorage.set(message.author.id, count);
-
         if (count === 1) {
             await message.member.timeout(5 * 60 * 1000, 'شتم في السيرفر').catch(() => {});
-            const m = await message.channel.send(`⚠️ <@${message.author.id}>، تم إسكاتك لمدة 5 دقائق بسبب الشتم. المرة القادمة ستطرد نهائياً!`);
+            const m = await message.channel.send(`⚠️ <@${message.author.id}>، تم إسكاتك لمدة 5 دقائق بسبب الشتم.`);
             setTimeout(() => m.delete().catch(() => {}), 10000);
         } else {
             await message.member.ban({ reason: 'تكرار الشتم الثقيل' }).catch(() => {});
-            message.channel.send(`🚫 تم طرد <@${message.author.id}> نهائياً من السيرفر بسبب تكرار الشتم.`);
+            message.channel.send(`🚫 تم طرد <@${message.author.id}> نهائياً بسبب تكرار الشتم.`);
         }
         return;
     }
 
-    // ميزة الرد عند المنشن أو في قناة المساعدة
+    // --- نظام الـ AI (قناة المساعدة أو Mention) ---
     const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
     const isMentioned = message.mentions.has(client.user.id);
 
     if (isHelpChannel || isMentioned) {
         try {
             await message.channel.sendTyping();
-            
-            // تنظيف النص من المنشن قبل إرساله للـ AI
-            const cleanContent = message.content.replace(`<@!${client.user.id}>`, '').replace(`<@${client.user.id}>`, '').trim();
+            const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
             
             const text = await getMistralResponse(cleanContent || message.content);
             if (text) {
                 const botMsg = await message.reply(text);
-                
-                // مسح الرسائل بعد 5 دقائق فقط إذا كانت في قناة المساعدة
                 if (isHelpChannel) {
                     setTimeout(() => {
                         message.delete().catch(() => {});
@@ -195,15 +154,10 @@ client.on('messageCreate', async (message) => {
                 }
             }
 
-            // إظهار رسالة الـ Submit عند طلب رتبة
             const rankKeywords = ['rank', 'role', 'رتبة', 'رتبه', 'رتب'];
             if (rankKeywords.some(key => message.content.toLowerCase().includes(key))) {
-                const embed = new EmbedBuilder()
-                    .setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510")
-                    .setColor('#3498db');
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('open_rank_modal').setLabel('Submit').setStyle(ButtonStyle.Primary)
-                );
+                const embed = new EmbedBuilder().setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510").setColor('#3498db');
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('open_rank_modal').setLabel('Submit').setStyle(ButtonStyle.Primary));
                 const sentModalMsg = await message.channel.send({ embeds: [embed], components: [row] });
                 if (isHelpChannel) setTimeout(() => sentModalMsg.delete().catch(() => {}), 300000);
             }
@@ -212,7 +166,6 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-    // التعامل مع الـ Modal (Submit)
     if (interaction.isButton() && interaction.customId === 'open_rank_modal') {
         const modal = new ModalBuilder().setCustomId('rank_modal').setTitle('Rank Request');
         const userField = new TextInputBuilder().setCustomId('xbox_user').setLabel("Username").setStyle(TextInputStyle.Short).setPlaceholder("Write your Xbox username").setRequired(true);
@@ -220,50 +173,33 @@ client.on('interactionCreate', async (interaction) => {
         modal.addComponents(new ActionRowBuilder().addComponents(userField), new ActionRowBuilder().addComponents(rankField));
         return await interaction.showModal(modal);
     }
-
     if (interaction.isModalSubmit() && interaction.customId === 'rank_modal') {
         const xbox = interaction.fields.getTextInputValue('xbox_user');
         const rank = interaction.fields.getTextInputValue('rank_type');
         const logCh = client.channels.cache.get(CONFIG.SUBMIT_LOG);
-        // إرسال البيانات مع منشن الشخص @
         if (logCh) await logCh.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
-
     if (interaction.isAutocomplete()) {
         const focusedValue = interaction.options.getFocused();
         const choices = Array.from(adsStorage.keys());
         const filtered = choices.filter(choice => choice.startsWith(focusedValue));
         await interaction.respond(filtered.map(c => ({ name: c, value: c }))).catch(() => {});
     }
-
     if (interaction.isChatInputCommand()) {
         const { commandName, options, guild, channel } = interaction;
         try {
             if (commandName === 'ping') return await interaction.reply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
-            
-            // تنفيذ أمر الرتب الجديد
             if (commandName === 'role') {
                 const targetUser = options.getMember('user');
                 const targetRole = options.getRole('rank');
                 const roleChan = guild.channels.cache.get(CONFIG.ROLE_CHANNEL);
-
-                if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-                    return await interaction.reply({ content: "❌ You don't have permission to use this command!", ephemeral: true });
-                }
-
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) return await interaction.reply({ content: "❌ You don't have permission!", ephemeral: true });
                 await targetUser.roles.add(targetRole).catch(e => console.error(e));
-                
-                const roleEmbed = new EmbedBuilder()
-                    .setTitle('✨ New Rank Given')
-                    .setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`)
-                    .setColor('#3498db')
-                    .setTimestamp();
-
+                const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
                 if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
                 return await interaction.reply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.`, ephemeral: true });
             }
-
             if (commandName === 'send') {
                 const msg = options.getString('message');
                 const style = options.getString('style');
@@ -288,20 +224,20 @@ client.on('interactionCreate', async (interaction) => {
             if (commandName === 'ads_edit') {
                 const name = options.getString('name');
                 const ad = adsStorage.get(name);
-                if (!ad) return await interaction.reply({ content: "❌ This ad does not exist.", ephemeral: true });
+                if (!ad) return await interaction.reply({ content: "❌ Not found.", ephemeral: true });
                 if (options.getString('text')) ad.text = options.getString('text');
                 if (options.getChannel('channel')) ad.channelId = options.getChannel('channel').id;
                 if (options.getInteger('interval')) ad.interval = options.getInteger('interval');
                 if (options.getInteger('delete') !== null) ad.deleteAfter = options.getInteger('delete');
                 if (options.getString('style')) ad.style = options.getString('style');
                 startAdLoop(name, guild.id);
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete ad permanently 🗑️').setStyle(ButtonStyle.Danger));
-                return await interaction.reply({ content: `⚙️ Ad **${name}** updated successfully.`, components: [row], ephemeral: true });
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete ad 🗑️').setStyle(ButtonStyle.Danger));
+                return await interaction.reply({ content: `⚙️ Ad **${name}** updated.`, components: [row], ephemeral: true });
             }
             if (commandName === 'clear') {
                 await interaction.deferReply({ ephemeral: true });
                 await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
-                return await interaction.editReply('Chat cleaned successfully! 🧹');
+                return await interaction.editReply('Chat cleaned! 🧹');
             }
             if (commandName === 'translate') {
                 await interaction.deferReply();
@@ -318,24 +254,25 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.isButton() && interaction.customId.startsWith('stop_ad_')) {
         const name = interaction.customId.replace('stop_ad_', '');
         const ad = adsStorage.get(name);
-        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ Ad **${name}** has been removed from the system.`, components: [], ephemeral: true }); }
+        if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ Ad **${name}** removed.`, components: [], ephemeral: true }); }
     }
 });
 
-// --- نظام الترحيب والرتب التلقائية ---
+// --- نظام الترحيب والرتب التلقائية المزدوج ---
 client.on('guildMemberAdd', async (member) => {
-    const role = member.guild.roles.cache.get(CONFIG.AUTO_ROLE);
-    if (role) await member.roles.add(role).catch(() => {});
+    // إضافة الرتبتين معاً
+    const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
+    await member.roles.add(rolesToAdd).catch(e => console.error("Error adding auto roles:", e));
+
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝒐𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
+        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
     updateLiveInfo(member.guild);
 });
 
-// --- نظام تحديث المعلومات (Info) ---
 async function updateLiveInfo(guild) {
     if (!guild) guild = client.guilds.cache.first();
     const infoCh = client.channels.cache.get(CONFIG.INFO_CH);
