@@ -30,7 +30,7 @@ const CONFIG = {
     HELP_CH: '1497909981725593712', // قناة المساعدة للـ AI
     SUBMIT_LOG: '1494367980702797935', // قناة سجل الطلبات
     ROLE_CHANNEL: '1482874761951576228', // القناة المطلوبة لأمر الرتب
-    INFO_CH: '1484641160394702958' // تأكد من إضافة ID قناة الـ Info هنا
+    INFO_CH: '1484641160394702958' // قناة الـ Info
 };
 
 const adsStorage = new Map();
@@ -134,9 +134,9 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // --- نظام الـ AI (قناة المساعدة أو Mention) ---
+    // --- التعديل هنا: يرد فقط لو المنشن للبوت نفسه وليس everyone أو here ---
     const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
-    const isMentioned = message.mentions.has(client.user.id);
+    const isMentioned = message.mentions.users.has(client.user.id) && !message.mentions.everyone;
 
     if (isHelpChannel || isMentioned) {
         try {
@@ -260,7 +260,6 @@ client.on('interactionCreate', async (interaction) => {
 
 // --- نظام الترحيب والرتب التلقائية المزدوج ---
 client.on('guildMemberAdd', async (member) => {
-    // إضافة الرتبتين معاً باستخدام الـ IDs من الـ CONFIG
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
     await member.roles.add(rolesToAdd).catch(e => console.error("Error adding auto roles:", e));
 
