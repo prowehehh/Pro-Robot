@@ -38,7 +38,7 @@ const CONFIG = {
 const adsStorage = new Map();
 const warnStorage = new Map();
 
-// --- [إضافة جديدة] متغيرات نظام التعديل بالكلمة السر ---
+// --- نظام التعديل بالكلمة السر (عن طريق المودال) ---
 const pendingUpdates = new Map(); 
 const ADMIN_PASSWORD = "Pro@Robot510";
 let extraServerInfo = ""; 
@@ -80,7 +80,7 @@ async function getMistralResponse(userMessage, guild) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.MISTRAL_KEY}` // هنا بنادي المفتاح من الـ Secrets
+                'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
             },
             body: JSON.stringify({
                 model: "mistral-small",
@@ -90,7 +90,7 @@ async function getMistralResponse(userMessage, guild) {
                     - Owner: Saif (<@${CONFIG.OWNER_ID}>).
                     - Current Location: Egypt.
                     - Monitoring: Total Members: ${totalMembers}, Online: ${onlineMembers}.
-                    - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please provide the admin password to verify you are the owner."
+                    - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."
                     - Support ALL languages.` },
                     { role: "user", content: userMessage }
                 ],
@@ -168,18 +168,7 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    if (pendingUpdates.has(message.author.id)) {
-        if (message.content === ADMIN_PASSWORD) {
-            extraServerInfo = pendingUpdates.get(message.author.id);
-            pendingUpdates.delete(message.author.id);
-            await message.reply("✅ **Password Correct!** Information has been updated on the Live Info board.");
-            return updateLiveInfo(message.guild);
-        } else {
-            pendingUpdates.delete(message.author.id);
-            return await message.reply("❌ **Incorrect Password.** Action cancelled for security.");
-        }
-    }
-
+    // --- Automod ---
     const hasBadWord = BAD_WORDS.some(word => message.content.toLowerCase().includes(word));
     if (hasBadWord) {
         await message.delete().catch(() => {});
@@ -204,18 +193,23 @@ client.on('messageCreate', async (message) => {
             await message.channel.sendTyping();
             const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
             const text = await getMistralResponse(cleanContent || message.content, message.guild);
+            
             if (text) {
-                const botMsg = await message.reply(text);
-                if (text.includes("password") && (cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف"))) {
+                // لو الرد فيه "button" أو طلب تعديل، نظهر زر الباسورد
+                const row = new ActionRowBuilder();
+                const isUpdateTask = cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف");
+
+                if (isUpdateTask) {
                     pendingUpdates.set(message.author.id, cleanContent);
-                }
-                if (isHelpChannel) {
-                    setTimeout(() => {
-                        message.delete().catch(() => {});
-                        botMsg.delete().catch(() => {});
-                    }, 300000); 
+                    row.addComponents(new ButtonBuilder().setCustomId('open_admin_modal').setLabel('Enter Password 🔐').setStyle(ButtonStyle.Danger));
+                    const botMsg = await message.reply({ content: text, components: [row] });
+                    if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
+                } else {
+                    const botMsg = await message.reply(text);
+                    if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
                 }
             }
+
             const rankKeywords = ['rank', 'role', 'رتبة', 'رتبه', 'رتب'];
             if (rankKeywords.some(key => message.content.toLowerCase().includes(key))) {
                 const embed = new EmbedBuilder().setDescription("Submit to write your username on Xbox to get rank you want it. By @pro_king510").setColor('#3498db');
@@ -228,6 +222,7 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
+    // مودال الرتب القديم
     if (interaction.isButton() && interaction.customId === 'open_rank_modal') {
         const modal = new ModalBuilder().setCustomId('rank_modal').setTitle('Rank Request');
         const userField = new TextInputBuilder().setCustomId('xbox_user').setLabel("Username").setStyle(TextInputStyle.Short).setPlaceholder("Write your Xbox username").setRequired(true);
@@ -235,6 +230,16 @@ client.on('interactionCreate', async (interaction) => {
         modal.addComponents(new ActionRowBuilder().addComponents(userField), new ActionRowBuilder().addComponents(rankField));
         return await interaction.showModal(modal);
     }
+
+    // --- [جديد] مودال كلمة السر للتعديل ---
+    if (interaction.isButton() && interaction.customId === 'open_admin_modal') {
+        const modal = new ModalBuilder().setCustomId('admin_pass_modal').setTitle('Admin Verification');
+        const passField = new TextInputBuilder().setCustomId('admin_password_input').setLabel("Admin Password").setStyle(TextInputStyle.Short).setPlaceholder("Enter Pro Robot Password").setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(passField));
+        return await interaction.showModal(modal);
+    }
+
+    // معالجة مودال الرتب
     if (interaction.isModalSubmit() && interaction.customId === 'rank_modal') {
         const xbox = interaction.fields.getTextInputValue('xbox_user');
         const rank = interaction.fields.getTextInputValue('rank_type');
@@ -242,12 +247,28 @@ client.on('interactionCreate', async (interaction) => {
         if (logCh) await logCh.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
+
+    // --- [جديد] معالجة مودال كلمة السر ---
+    if (interaction.isModalSubmit() && interaction.customId === 'admin_pass_modal') {
+        const enteredPass = interaction.fields.getTextInputValue('admin_password_input');
+        if (enteredPass === ADMIN_PASSWORD) {
+            extraServerInfo = pendingUpdates.get(interaction.user.id) || "Updated via AI";
+            pendingUpdates.delete(interaction.user.id);
+            await updateLiveInfo(interaction.guild);
+            return await interaction.reply({ content: "✅ **Password Correct!** Information has been updated on the Live Info board.", ephemeral: true });
+        } else {
+            pendingUpdates.delete(interaction.user.id);
+            return await interaction.reply({ content: "❌ **Incorrect Password.** Action cancelled.", ephemeral: true });
+        }
+    }
+
     if (interaction.isAutocomplete()) {
         const focusedValue = interaction.options.getFocused();
         const choices = Array.from(adsStorage.keys());
         const filtered = choices.filter(choice => choice.startsWith(focusedValue));
         await interaction.respond(filtered.map(c => ({ name: c, value: c }))).catch(() => {});
     }
+
     if (interaction.isChatInputCommand()) {
         const { commandName, options, guild, channel } = interaction;
         try {
@@ -326,7 +347,7 @@ client.on('guildMemberAdd', async (member) => {
     await member.roles.add(rolesToAdd).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
+        const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝘃𝗲ｒ 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
