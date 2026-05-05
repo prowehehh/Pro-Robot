@@ -7,7 +7,7 @@ const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
 
-// تشغيل السيرفر عشان البوت يفضل صاحي 24 ساعة
+// Server keep-alive
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
 app.listen(process.env.PORT || 3000);
 
@@ -17,43 +17,42 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences, // لإتاحة مراقبة حالة الأعضاء (أونلاين/أوفلاين)
-        GatewayIntentBits.GuildModeration, // لمراقبة سجلات التدقيق (Audit Logs)
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildModeration,
     ],
 });
 
-// إعدادات السيرفر الخاصة بك
+// Server Configuration
 const CONFIG = {
     WELCOME_CH: '1482881348204101768',
-    AUTO_ROLE: '1482883802186514615', // الرتبة الأولى
-    AUTO_ROLE_2: '1499510435639197887', // الرتبة الثانية الجديدة
+    AUTO_ROLE: '1482883802186514615',
+    AUTO_ROLE_2: '1499510435639197887',
     OWNER_ID: '1134146616857731173',
     BOT_ID: '1495419259147386920',
-    HELP_CH: '1497909981725593712', // قناة المساعدة للـ AI
-    SUBMIT_LOG: '1494367980702797935', // قناة سجل الطلبات والمراقبة
-    ROLE_CHANNEL: '1482874761951576228', // القناة المطلوبة لأمر الرتب
-    INFO_CH: '1484641160394702958' // قناة الـ Info
+    HELP_CH: '1497909981725593712',
+    SUBMIT_LOG: '1494367980702797935',
+    ROLE_CHANNEL: '1482874761951576228',
+    INFO_CH: '1484641160394702958'
 };
 
 const adsStorage = new Map();
-const warnStorage = new Map(); // لتخزين عدد مرات الشتم لكل شخص
+const warnStorage = new Map();
 
-// --- نظام مراقبة التغييرات الفوري (Detailed Logger) ---
+// --- Audit Log Monitoring System ---
 async function sendDetailedLog(guild, title, details, color = '#3498db') {
     const logChannel = guild.channels.cache.get(CONFIG.SUBMIT_LOG);
     if (!logChannel) return;
 
-    // محاولة معرفة الشخص المسؤول عن التغيير من سجلات السيرفر
     const fetchedLogs = await guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
     const logEntry = fetchedLogs?.entries.first();
-    const executor = logEntry ? logEntry.executor.tag : "نظام تلقائي / غير معروف";
+    const executor = logEntry ? logEntry.executor.tag : "System / Unknown";
 
     const logEmbed = new EmbedBuilder()
-        .setTitle(`🛠️ تحديث في السيرفر: ${title}`)
+        .setTitle(`🛠️ Server Update: ${title}`)
         .setDescription(details)
         .addFields(
-            { name: '👤 المسؤول:', value: `**${executor}**`, inline: true },
-            { name: '📍 المكان:', value: guild.name, inline: true }
+            { name: '👤 Executor:', value: `**${executor}**`, inline: true },
+            { name: '📍 Location:', value: guild.name, inline: true }
         )
         .setColor(color)
         .setTimestamp();
@@ -61,12 +60,11 @@ async function sendDetailedLog(guild, title, details, color = '#3498db') {
     await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
 }
 
-// --- نظام منع الشتائم الثقيلة (Automod) ---
-const BAD_WORDS = ['الكلمة1', 'الكلمة2', 'الكلمة3']; 
+// --- Automod (Bad Words) ---
+const BAD_WORDS = ['word1', 'word2', 'word3']; 
 
-// --- وظيفة الـ AI (Mistral) المحترف مع نظام المراقبة الشاملة ---
+// --- Mistral AI Function ---
 async function getMistralResponse(userMessage, guild) {
-    // تجهيز بيانات مراقبة السيرفر للـ AI
     const totalMembers = guild.memberCount;
     const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
     const allChannels = guild.channels.cache.map(c => `${c.name} (${c.type === ChannelType.GuildText ? 'Text' : 'Voice'})`).join(', ');
@@ -96,13 +94,13 @@ async function getMistralResponse(userMessage, guild) {
             })
         });
         const data = await response.json();
-        return data.choices?.[0]?.message?.content || `I don't know, you have to ask onwer! <@${CONFIG.OWNER_ID}>`;
+        return data.choices?.[0]?.message?.content || `I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>`;
     } catch (err) {
         return `I don't know, ask the owner! <@${CONFIG.OWNER_ID}>`;
     }
 }
 
-// --- تسجيل جميع الأوامر بدون استثناء ---
+// --- Command Registration ---
 const commands = [
     new SlashCommandBuilder().setName('ping').setDescription('Bot latency speed'),
     new SlashCommandBuilder().setName('clear').setDescription('Clear the chat').addIntegerOption(o => o.setName('amount').setDescription('Number of messages').setRequired(true)),
@@ -133,35 +131,32 @@ function startAdLoop(adName, guildId) {
     }, ad.interval * 60000);
 }
 
-// --- رادارات المراقبة الفورية (Detailed Events) ---
+// --- Monitoring Events ---
 
-// مراقبة تحديثات السيرفر
 client.on('guildUpdate', (oldGuild, newGuild) => {
     if (oldGuild.name !== newGuild.name) {
-        sendDetailedLog(newGuild, 'تغيير اسم السيرفر', `تم تغيير الاسم من **${oldGuild.name}** إلى **${newGuild.name}**`, '#e67e22');
+        sendDetailedLog(newGuild, 'Server Name Changed', `Name changed from **${oldGuild.name}** to **${newGuild.name}**`, '#e67e22');
     }
 });
 
-// مراقبة تحديثات الأعضاء (رتب، لقب)
 client.on('guildMemberUpdate', (oldMember, newMember) => {
     if (oldMember.nickname !== newMember.nickname) {
-        sendDetailedLog(newMember.guild, 'تغيير اللقب المستعار', `العضو: <@${newMember.id}>\nمن: \`${oldMember.nickname || 'لا يوجد'}\`\nإلى: \`${newMember.nickname || 'الاسم الأصلي'}\``);
+        sendDetailedLog(newMember.guild, 'Nickname Changed', `User: <@${newMember.id}>\nFrom: \`${oldMember.nickname || 'None'}\`\nTo: \`${newMember.nickname || 'Original Name'}\``);
     }
     const oldRoles = oldMember.roles.cache.map(r => r.id);
     const newRoles = newMember.roles.cache.map(r => r.id);
     if (oldRoles.length !== newRoles.length) {
         const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id)).first();
         const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id)).first();
-        if (added) sendDetailedLog(newMember.guild, 'إضافة رتبة', `تم إضافة رتبة <@&${added.id}> للعضو <@${newMember.id}>`, '#2ecc71');
-        if (removed) sendDetailedLog(newMember.guild, 'إزالة رتبة', `تم إزالة رتبة <@&${removed.id}> من العضو <@${newMember.id}>`, '#e74c3c');
+        if (added) sendDetailedLog(newMember.guild, 'Role Added', `Added role <@&${added.id}> to <@${newMember.id}>`, '#2ecc71');
+        if (removed) sendDetailedLog(newMember.guild, 'Role Removed', `Removed role <@&${removed.id}> from <@${newMember.id}>`, '#e74c3c');
     }
 });
 
-// مراقبة القنوات
-client.on('channelCreate', (channel) => sendDetailedLog(channel.guild, 'إنشاء قناة', `تم إنشاء قناة جديدة: **${channel.name}** (نوع: ${channel.type})`, '#2ecc71'));
-client.on('channelDelete', (channel) => sendDetailedLog(channel.guild, 'حذف قناة', `تم حذف قناة: **${channel.name}**`, '#e74c3c'));
+client.on('channelCreate', (channel) => sendDetailedLog(channel.guild, 'Channel Created', `Name: **${channel.name}** (Type: ${channel.type})`, '#2ecc71'));
+client.on('channelDelete', (channel) => sendDetailedLog(channel.guild, 'Channel Deleted', `Name: **${channel.name}**`, '#e74c3c'));
 client.on('channelUpdate', (oldCh, newCh) => {
-    if (oldCh.name !== newCh.name) sendDetailedLog(newCh.guild, 'تعديل اسم قناة', `من: \`${oldCh.name}\`\nإلى: \`${newCh.name}\``, '#f1c40f');
+    if (oldCh.name !== newCh.name) sendDetailedLog(newCh.guild, 'Channel Renamed', `From: \`${oldCh.name}\`\nTo: \`${newCh.name}\``, '#f1c40f');
 });
 
 client.on('ready', async () => {
@@ -171,28 +166,27 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// التعامل مع رسائل الـ AI والـ Automod والـ Mention
+// Chat handling
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // --- فحص الشتائم ---
+    // --- Automod ---
     const hasBadWord = BAD_WORDS.some(word => message.content.toLowerCase().includes(word));
     if (hasBadWord) {
         await message.delete().catch(() => {});
         let count = (warnStorage.get(message.author.id) || 0) + 1;
         warnStorage.set(message.author.id, count);
         if (count === 1) {
-            await message.member.timeout(5 * 60 * 1000, 'شتم في السيرفر').catch(() => {});
-            const m = await message.channel.send(`⚠️ <@${message.author.id}>، تم إسكاتك لمدة 5 دقائق بسبب الشتم.`);
+            await message.member.timeout(5 * 60 * 1000, 'Swearing in server').catch(() => {});
+            const m = await message.channel.send(`⚠️ <@${message.author.id}>, you have been muted for 5 minutes for swearing.`);
             setTimeout(() => m.delete().catch(() => {}), 10000);
         } else {
-            await message.member.ban({ reason: 'تكرار الشتم الثقيل' }).catch(() => {});
-            message.channel.send(`🚫 تم طرد <@${message.author.id}> نهائياً بسبب تكرار الشتم.`);
+            await message.member.ban({ reason: 'Repeated severe swearing' }).catch(() => {});
+            message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for repeated swearing.`);
         }
         return;
     }
 
-    // يرد فقط لو المنشن للبوت نفسه وليس everyone أو here
     const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
     const isMentioned = message.mentions.users.has(client.user.id) && !message.mentions.everyone;
 
@@ -201,7 +195,6 @@ client.on('messageCreate', async (message) => {
             await message.channel.sendTyping();
             const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
             
-            // تمرير الـ guild للـ AI ليكون مراقباً
             const text = await getMistralResponse(cleanContent || message.content, message.guild);
             if (text) {
                 const botMsg = await message.reply(text);
@@ -317,9 +310,9 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// --- نظام الترحيب والرتب التلقائية المزدوج ---
+// Welcome system
 client.on('guildMemberAdd', async (member) => {
-    sendDetailedLog(member.guild, 'انضمام عضو جديد', `العضو: <@${member.id}> قد دخل السيرفر للتو.`, '#2ecc71');
+    sendDetailedLog(member.guild, 'New Member Joined', `Member: <@${member.id}> has joined the server.`, '#2ecc71');
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
     await member.roles.add(rolesToAdd).catch(e => console.error("Error adding auto roles:", e));
 
@@ -332,9 +325,9 @@ client.on('guildMemberAdd', async (member) => {
     updateLiveInfo(member.guild);
 });
 
-// --- ميزة مسح جميع رسائل العضو عند الخروج من السيرفر ---
+// Clear messages on leave
 client.on('guildMemberRemove', async (member) => {
-    sendDetailedLog(member.guild, 'خروج عضو', `العضو: **${member.user.tag}** غادر السيرفر.`, '#e74c3c');
+    sendDetailedLog(member.guild, 'Member Left', `User: **${member.user.tag}** left the server.`, '#e74c3c');
     const channels = member.guild.channels.cache.filter(ch => ch.type === ChannelType.GuildText);
     for (const [id, channel] of channels) {
         try {
