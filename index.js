@@ -17,6 +17,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences, // لإتاحة مراقبة حالة الأعضاء (أونلاين/أوفلاين)
     ],
 });
 
@@ -39,8 +40,13 @@ const warnStorage = new Map(); // لتخزين عدد مرات الشتم لكل
 // --- نظام منع الشتائم الثقيلة (Automod) ---
 const BAD_WORDS = ['الكلمة1', 'الكلمة2', 'الكلمة3']; 
 
-// --- وظيفة الـ AI (Mistral) المحترف ---
-async function getMistralResponse(userMessage) {
+// --- وظيفة الـ AI (Mistral) المحترف مع نظام المراقبة الشاملة ---
+async function getMistralResponse(userMessage, guild) {
+    // تجهيز بيانات مراقبة السيرفر للـ AI
+    const totalMembers = guild.memberCount;
+    const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
+    const allChannels = guild.channels.cache.map(c => `${c.name} (${c.type === ChannelType.GuildText ? 'Text' : 'Voice'})`).join(', ');
+
     try {
         const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
             method: 'POST',
@@ -51,18 +57,15 @@ async function getMistralResponse(userMessage) {
             body: JSON.stringify({
                 model: "mistral-small",
                 messages: [
-                    { role: "system", content: `You are "Pro Robot", the elite professional AI assistant of this server.
+                    { role: "system", content: `You are "Pro Robot", the elite professional AI assistant and server observer.
                     - Server Name: "Pro Server for MC".
-                    - Support ALL world languages fluently. Respond in the same language as the user.
-                    - Server Info: Created 15/03/2026, Location: Egypt, Owner: Saif (<@${CONFIG.OWNER_ID}>).
-                    - Ranks Info:
-                      * @Ultimate: Pay 1.2$ + missions in https://discord.com/channels/1482874760940486699/1482934834899714048
-                      * @YouTuber: Make an advertisement for this server.
-                      * @Booster Gold: Boost the server.
-                      * @Vip: Needs trust and experience (for 3rd-degree members).
-                      * @Helper: Help the server with required tasks.
-                    - Server Rules: 1. No insults/bad words. 2. No harmful links/files. 3. Emojis/Stickers/GIFs allowed. 4. No ads for other servers. 5. Slowmode enabled. 6. Verify account required. Full rules: https://discord.com/channels/1482874760940486699/1484639863411183636
-                    - Behavior: Answer greetings (Hi/مرحبا). Keep responses short and professional. If unknown, say: "I don't know, ask the owner! <@${CONFIG.OWNER_ID}>".` },
+                    - Owner: Saif (<@${CONFIG.OWNER_ID}>).
+                    - Current Location: Egypt.
+                    - Date Server Created: 15/03/2026.
+                    - Monitoring Mode: You see everything. Total Members: ${totalMembers}, Online: ${onlineMembers}.
+                    - Channels list: [${allChannels}].
+                    - Task: Monitor interactions and provide info about the server precisely.
+                    - Support ALL languages. Respond in the same language as the user.` },
                     { role: "user", content: userMessage }
                 ],
                 temperature: 0.5
@@ -134,7 +137,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // --- التعديل هنا: يرد فقط لو المنشن للبوت نفسه وليس everyone أو here ---
+    // يرد فقط لو المنشن للبوت نفسه وليس everyone أو here
     const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
     const isMentioned = message.mentions.users.has(client.user.id) && !message.mentions.everyone;
 
@@ -143,7 +146,8 @@ client.on('messageCreate', async (message) => {
             await message.channel.sendTyping();
             const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
             
-            const text = await getMistralResponse(cleanContent || message.content);
+            // تمرير الـ guild للـ AI ليكون مراقباً
+            const text = await getMistralResponse(cleanContent || message.content, message.guild);
             if (text) {
                 const botMsg = await message.reply(text);
                 if (isHelpChannel) {
@@ -268,6 +272,24 @@ client.on('guildMemberAdd', async (member) => {
         const welcomeEmbed = new EmbedBuilder().setDescription(`𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝐏𝐫𝐨 𝐒𝐞𝐫𝐯𝐞𝐫 𝐟𝐨𝐫 𝐌𝐂 👑\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
+    }
+    updateLiveInfo(member.guild);
+});
+
+// --- ميزة مسح جميع رسائل العضو عند الخروج من السيرفر ---
+client.on('guildMemberRemove', async (member) => {
+    const channels = member.guild.channels.cache.filter(ch => ch.type === ChannelType.GuildText);
+    for (const [id, channel] of channels) {
+        try {
+            const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+            if (!messages) continue;
+            const memberMessages = messages.filter(m => m.author.id === member.id);
+            if (memberMessages.size > 0) {
+                await channel.bulkDelete(memberMessages).catch(() => {
+                    memberMessages.forEach(m => m.delete().catch(() => {}));
+                });
+            }
+        } catch (e) { console.error(e); }
     }
     updateLiveInfo(member.guild);
 });
