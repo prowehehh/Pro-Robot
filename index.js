@@ -331,7 +331,7 @@ const commands = [
 ].map(c => c.toJSON());
 
 // ============================================================
-// 🔄 AD LOOP
+// 🔄 AD LOOP (تصحيح الأخطاء هنا)
 // ============================================================
 function startAdLoop(adName, guildId) {
     const ad = adsStorage.get(adName);
@@ -349,14 +349,16 @@ function startAdLoop(adName, guildId) {
         if (ad.style === 'embed') {
             sent = await chan.send({ embeds: [new EmbedBuilder().setDescription(ad.text).setColor('#3498db').setTitle(`📢 ${ad.name}`)] }).catch(() => {});
         } else {
-            sent = await chan.send(`**📢 ${ad.name}**\n\n${ad.text}`).catch(() => {};
+            // التصحيح كان هنا: زيادة قوس الإغلاق قبل الـ catch
+            sent = await chan.send(`**📢 ${ad.name}**\n\n${ad.text}`).catch(() => {}); 
         }
         if (sent) {
             ad.lastMsgId = sent.id;
+            // التصحيح كان هنا: زيادة قوس الإغلاق قبل الـ catch
             if (ad.deleteAfter > 0) setTimeout(() => sent.delete().catch(() => {}), ad.deleteAfter * 60000);
         }
     }, ad.interval * 60000);
-}
+} 
 
 // ============================================================
 // 📡 RADAR EVENTS
