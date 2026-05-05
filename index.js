@@ -1,7 +1,7 @@
 const { 
     Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
-    ModalBuilder, TextInputBuilder, TextInputStyle 
+    ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent 
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -18,6 +18,7 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences, // لإتاحة مراقبة حالة الأعضاء (أونلاين/أوفلاين)
+        GatewayIntentBits.GuildModeration, // لمراقبة سجلات التدقيق (Audit Logs)
     ],
 });
 
@@ -29,13 +30,36 @@ const CONFIG = {
     OWNER_ID: '1134146616857731173',
     BOT_ID: '1495419259147386920',
     HELP_CH: '1497909981725593712', // قناة المساعدة للـ AI
-    SUBMIT_LOG: '1494367980702797935', // قناة سجل الطلبات
+    SUBMIT_LOG: '1494367980702797935', // قناة سجل الطلبات والمراقبة
     ROLE_CHANNEL: '1482874761951576228', // القناة المطلوبة لأمر الرتب
     INFO_CH: '1484641160394702958' // قناة الـ Info
 };
 
 const adsStorage = new Map();
 const warnStorage = new Map(); // لتخزين عدد مرات الشتم لكل شخص
+
+// --- نظام مراقبة التغييرات الفوري (Detailed Logger) ---
+async function sendDetailedLog(guild, title, details, color = '#3498db') {
+    const logChannel = guild.channels.cache.get(CONFIG.SUBMIT_LOG);
+    if (!logChannel) return;
+
+    // محاولة معرفة الشخص المسؤول عن التغيير من سجلات السيرفر
+    const fetchedLogs = await guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
+    const logEntry = fetchedLogs?.entries.first();
+    const executor = logEntry ? logEntry.executor.tag : "نظام تلقائي / غير معروف";
+
+    const logEmbed = new EmbedBuilder()
+        .setTitle(`🛠️ تحديث في السيرفر: ${title}`)
+        .setDescription(details)
+        .addFields(
+            { name: '👤 المسؤول:', value: `**${executor}**`, inline: true },
+            { name: '📍 المكان:', value: guild.name, inline: true }
+        )
+        .setColor(color)
+        .setTimestamp();
+
+    await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+}
 
 // --- نظام منع الشتائم الثقيلة (Automod) ---
 const BAD_WORDS = ['الكلمة1', 'الكلمة2', 'الكلمة3']; 
@@ -108,6 +132,37 @@ function startAdLoop(adName, guildId) {
         if (sent) { ad.lastMsgId = sent.id; if (ad.deleteAfter > 0) setTimeout(() => sent.delete().catch(() => {}), ad.deleteAfter * 60000); }
     }, ad.interval * 60000);
 }
+
+// --- رادارات المراقبة الفورية (Detailed Events) ---
+
+// مراقبة تحديثات السيرفر
+client.on('guildUpdate', (oldGuild, newGuild) => {
+    if (oldGuild.name !== newGuild.name) {
+        sendDetailedLog(newGuild, 'تغيير اسم السيرفر', `تم تغيير الاسم من **${oldGuild.name}** إلى **${newGuild.name}**`, '#e67e22');
+    }
+});
+
+// مراقبة تحديثات الأعضاء (رتب، لقب)
+client.on('guildMemberUpdate', (oldMember, newMember) => {
+    if (oldMember.nickname !== newMember.nickname) {
+        sendDetailedLog(newMember.guild, 'تغيير اللقب المستعار', `العضو: <@${newMember.id}>\nمن: \`${oldMember.nickname || 'لا يوجد'}\`\nإلى: \`${newMember.nickname || 'الاسم الأصلي'}\``);
+    }
+    const oldRoles = oldMember.roles.cache.map(r => r.id);
+    const newRoles = newMember.roles.cache.map(r => r.id);
+    if (oldRoles.length !== newRoles.length) {
+        const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id)).first();
+        const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id)).first();
+        if (added) sendDetailedLog(newMember.guild, 'إضافة رتبة', `تم إضافة رتبة <@&${added.id}> للعضو <@${newMember.id}>`, '#2ecc71');
+        if (removed) sendDetailedLog(newMember.guild, 'إزالة رتبة', `تم إزالة رتبة <@&${removed.id}> من العضو <@${newMember.id}>`, '#e74c3c');
+    }
+});
+
+// مراقبة القنوات
+client.on('channelCreate', (channel) => sendDetailedLog(channel.guild, 'إنشاء قناة', `تم إنشاء قناة جديدة: **${channel.name}** (نوع: ${channel.type})`, '#2ecc71'));
+client.on('channelDelete', (channel) => sendDetailedLog(channel.guild, 'حذف قناة', `تم حذف قناة: **${channel.name}**`, '#e74c3c'));
+client.on('channelUpdate', (oldCh, newCh) => {
+    if (oldCh.name !== newCh.name) sendDetailedLog(newCh.guild, 'تعديل اسم قناة', `من: \`${oldCh.name}\`\nإلى: \`${newCh.name}\``, '#f1c40f');
+});
 
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -264,6 +319,7 @@ client.on('interactionCreate', async (interaction) => {
 
 // --- نظام الترحيب والرتب التلقائية المزدوج ---
 client.on('guildMemberAdd', async (member) => {
+    sendDetailedLog(member.guild, 'انضمام عضو جديد', `العضو: <@${member.id}> قد دخل السيرفر للتو.`, '#2ecc71');
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
     await member.roles.add(rolesToAdd).catch(e => console.error("Error adding auto roles:", e));
 
@@ -278,6 +334,7 @@ client.on('guildMemberAdd', async (member) => {
 
 // --- ميزة مسح جميع رسائل العضو عند الخروج من السيرفر ---
 client.on('guildMemberRemove', async (member) => {
+    sendDetailedLog(member.guild, 'خروج عضو', `العضو: **${member.user.tag}** غادر السيرفر.`, '#e74c3c');
     const channels = member.guild.channels.cache.filter(ch => ch.type === ChannelType.GuildText);
     for (const [id, channel] of channels) {
         try {
