@@ -429,23 +429,20 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isChatInputCommand()) {
-        const { commandName, options, guild, channel } = interaction;
-        try {
-            // ✅ [DATABASE] Check DB for command restrictions before execution
-            const db = await getDB(interaction.guild.id);
-            const allowedRoleId = db.cmdPermissions.get(commandName);
+            const { commandName, options, guild, channel } = interaction;
+    await interaction.deferReply({ ephemeral: true }).catch(() => {});
+    try {
+        const dbData = await getDB(interaction.guild.id);
+        const allowedRoleId = dbData.cmdPermissions.get(commandName);
 
-            // Logic: If a role is required AND user is not Admin AND doesn't have the role
-            if (allowedRoleId && 
-                !interaction.member.roles.cache.has(allowedRoleId) && 
-                !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                
-                return await interaction.reply({ 
-                    content: `❌ Access Denied! This command requires the <@&${allowedRoleId}> role.`, 
-                    ephemeral: true 
-                });
-            }
-
+        if (allowedRoleId && 
+            !interaction.member.roles.cache.has(allowedRoleId) && 
+            !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            
+            return await interaction.editReply({ 
+                content: `❌ Access Denied! This command requires the <@&${allowedRoleId}> role.`
+            });
+        }
             if (commandName === 'ping') return await interaction.reply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
             if (commandName === 'role') {
                 const targetUser = options.getMember('user');
