@@ -7,6 +7,34 @@ const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
 
+// ============================================================
+// --- ✅ [DATABASE] MongoDB Connection & Schema ---
+// ============================================================
+const mongoose = require('mongoose');
+
+// Connecting to the database using the Environment Variable from Railway
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('✅ Pro-Robot Database: Connection Successful'))
+    .catch(err => console.error('❌ Pro-Robot Database: Connection Error', err));
+
+// Defining the Schema (How our data is organized in the database)
+const serverSchema = new mongoose.Schema({
+    guildId: String,
+    cmdPermissions: { type: Map, of: String, default: {} },
+    userWarns: { type: Map, of: Number, default: {} }
+});
+
+const ServerModel = mongoose.model('ServerData', serverSchema);
+
+// Function to fetch or create database entry for a specific server
+async function getDB(guildId) {
+    let data = await ServerModel.findOne({ guildId });
+    if (!data) {
+        data = await ServerModel.create({ guildId });
+    }
+    return data;
+}
+
 // Server keep-alive
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
 app.listen(process.env.PORT || 3000);
@@ -151,6 +179,8 @@ const commands = [
     new SlashCommandBuilder().setName('translate').setDescription('Translate text').addStringOption(o => o.setName('text').setDescription('The text').setRequired(true)).addStringOption(o => o.setName('to').setDescription('Language code (e.g: ar)').setRequired(true)),
     new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote').addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
     new SlashCommandBuilder().setName('role').setDescription('Select a member and a rank').addUserOption(o => o.setName('user').setDescription('The member to give the rank to').setRequired(true)).addRoleOption(o => o.setName('rank').setDescription('The rank to give').setRequired(true)),
+    // ✅ [DATABASE] New command for slash control
+    new SlashCommandBuilder().setName('slash_control').setDescription('Restrict a command to a specific role').addStringOption(o => o.setName('command_name').setDescription('The command to restrict').setRequired(true)).addRoleOption(o => o.setName('allowed_role').setDescription('The role allowed to use this command').setRequired(true)),
 ].map(c => c.toJSON());
 
 function startAdLoop(adName, guildId) {
@@ -401,6 +431,21 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) {
         const { commandName, options, guild, channel } = interaction;
         try {
+            // ✅ [DATABASE] Check DB for command restrictions before execution
+            const db = await getDB(interaction.guild.id);
+            const allowedRoleId = db.cmdPermissions.get(commandName);
+
+            // Logic: If a role is required AND user is not Admin AND doesn't have the role
+            if (allowedRoleId && 
+                !interaction.member.roles.cache.has(allowedRoleId) && 
+                !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                
+                return await interaction.reply({ 
+                    content: `❌ Access Denied! This command requires the <@&${allowedRoleId}> role.`, 
+                    ephemeral: true 
+                });
+            }
+
             if (commandName === 'ping') return await interaction.reply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
             if (commandName === 'role') {
                 const targetUser = options.getMember('user');
@@ -460,6 +505,20 @@ client.on('interactionCreate', async (interaction) => {
             if (commandName === 'vote') {
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('v_yes').setLabel('Yes ✅').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('v_no').setLabel('No ❌').setStyle(ButtonStyle.Danger));
                 return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('New Vote').setDescription(options.getString('question')).setColor('#f1c40f')], components: [row] });
+            }
+            // ✅ [DATABASE] slash_control command handler
+            if (commandName === 'slash_control') {
+                const targetCmd = options.getString('command_name');
+                const role = options.getRole('allowed_role');
+                
+                // Saving settings to the persistent database
+                db.cmdPermissions.set(targetCmd, role.id);
+                await db.save(); 
+
+                return await interaction.reply({ 
+                    content: `✅ Settings updated! The command \`/${targetCmd}\` is now restricted to <@&${role.id}>.`, 
+                    ephemeral: true 
+                });
             }
         } catch (e) { console.error(e); }
     } 
