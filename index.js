@@ -443,16 +443,16 @@ client.on('interactionCreate', async (interaction) => {
                 content: `❌ Access Denied! This command requires the <@&${allowedRoleId}> role.`
             });
         }
-            if (commandName === 'ping') return await interaction.reply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
+            if (commandName === 'ping') return await interaction.editReply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
             if (commandName === 'role') {
-                const targetUser = options.getMember('user');
-                const targetRole = options.getRole('rank');
-                const roleChan = guild.channels.cache.get(CONFIG.ROLE_CHANNEL);
-                if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) return await interaction.reply({ content: "❌ You don't have permission!", ephemeral: true });
-                await targetUser.roles.add(targetRole).catch(e => console.error(e));
-                const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
-                if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
-                return await interaction.reply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.`, ephemeral: true });
+    const targetUser = options.getMember('user');
+    const targetRole = options.getRole('rank');
+    const roleChan = guild.channels.cache.get(CONFIG.ROLE_CHANNEL);
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) return await interaction.editReply({ content: "❌ You don't have permission!" });
+    await targetUser.roles.add(targetRole).catch(e => console.error(e));
+    const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
+    if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
+    return await interaction.editReply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.` });
             }
             if (commandName === 'send') {
                 const msg = options.getString('message');
@@ -486,38 +486,33 @@ client.on('interactionCreate', async (interaction) => {
                 if (options.getString('style')) ad.style = options.getString('style');
                 startAdLoop(name, guild.id);
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete ad 🗑️').setStyle(ButtonStyle.Danger));
-                return await interaction.reply({ content: `⚙️ Ad **${name}** updated.`, components: [row], ephemeral: true });
-            }
+                return await interaction.reply({ content: `⚙️ Ad **${name}** updated.`, components: [row], ephemeral: true });}
             if (commandName === 'clear') {
-                await interaction.deferReply({ ephemeral: true });
-                await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
-                return await interaction.editReply('Chat cleaned! 🧹');
-            }
+    await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
+    return await interaction.editReply('Chat cleaned! 🧹');}
             if (commandName === 'translate') {
-                await interaction.deferReply();
-                const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
-                const json = await res.json();
-                return await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 Translation').setDescription(json[0].map(i => i[0]).join('')).setColor('#4285F4')] });
-            }
+    const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
+    const json = await res.json();
+    return await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 Translation').setDescription(json[0].map(i => i[0]).join('')).setColor('#4285F4')] });}
             if (commandName === 'vote') {
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('v_yes').setLabel('Yes ✅').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('v_no').setLabel('No ❌').setStyle(ButtonStyle.Danger));
-                return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('New Vote').setDescription(options.getString('question')).setColor('#f1c40f')], components: [row] });
-            }
+                return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('New Vote').setDescription(options.getString('question')).setColor('#f1c40f')], components: [row] });}
             // ✅ [DATABASE] slash_control command handler
             if (commandName === 'slash_control') {
-                const targetCmd = options.getString('command_name');
-                const role = options.getRole('allowed_role');
-                
-                // Saving settings to the persistent database
-                db.cmdPermissions.set(targetCmd, role.id);
-                await db.save(); 
+                   const targetCmd = options.getString('command_name');
+    const role = options.getRole('allowed_role');
+    
+    dbData.cmdPermissions.set(targetCmd, role.id);
+    await dbData.save(); 
 
-                return await interaction.reply({ 
-                    content: `✅ Settings updated! The command \`/${targetCmd}\` is now restricted to <@&${role.id}>.`, 
-                    ephemeral: true 
-                });
+    return await interaction.editReply({ 
+        content: `✅ Settings updated! The command \`/${targetCmd}\` is now restricted to <@&${role.id}>.`
+    });
             }
-        } catch (e) { console.error(e); }
+                } catch (e) { 
+            console.error("❌ Command Error:", e);
+            if (interaction.deferred) await interaction.editReply("❌ An error occurred.").catch(() => {});
+        }
     } 
     else if (interaction.isButton() && interaction.customId.startsWith('stop_ad_')) {
         const name = interaction.customId.replace('stop_ad_', '');
