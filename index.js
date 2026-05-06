@@ -454,13 +454,16 @@ client.on('interactionCreate', async (interaction) => {
     if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
     return await interaction.editReply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.` });
             }
-            if (commandName === 'send') {
+                  if (commandName === 'send') {
                 const msg = options.getString('message');
                 const style = options.getString('style');
                 const delay = options.getInteger('delay_send');
                 const delAfter = options.getInteger('delete_after');
                 const color = options.getString('color') || '#3498db';
-                await interaction.reply({ content: `✅ The message will be sent in ${delay} minute(s).`, ephemeral: true });
+                
+                // التعديل هنا: استخدمنا editReply وشلنا ephemeral
+                await interaction.editReply({ content: `✅ The message will be sent in ${delay} minute(s).` });
+                
                 setTimeout(async () => {
                     let sent;
                     if (style === 'embed') { sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(msg).setColor(color)] }).catch(() => {}); }
@@ -468,25 +471,31 @@ client.on('interactionCreate', async (interaction) => {
                     if (sent && delAfter > 0) setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
                 }, delay * 60000);
             }
-            if (commandName === 'ads_set') {
+                        if (commandName === 'ads_set') {
                 const name = options.getString('name');
                 const data = { name, text: options.getString('text'), channelId: options.getChannel('channel').id, interval: options.getInteger('interval'), deleteAfter: options.getInteger('delete'), style: options.getString('style'), timer: null, lastMsgId: null };
                 adsStorage.set(name, data);
                 startAdLoop(name, guild.id);
-                return await interaction.reply({ content: `✅ Ad activated: **${name}**`, ephemeral: true });
+                // التعديل هنا: editReply
+                return await interaction.editReply({ content: `✅ Ad activated: **${name}**` });
             }
-            if (commandName === 'ads_edit') {
+                if (commandName === 'ads_edit') {
                 const name = options.getString('name');
                 const ad = adsStorage.get(name);
-                if (!ad) return await interaction.reply({ content: "❌ Not found.", ephemeral: true });
+                // التعديل هنا: editReply
+                if (!ad) return await interaction.editReply({ content: "❌ Not found." });
+                
                 if (options.getString('text')) ad.text = options.getString('text');
                 if (options.getChannel('channel')) ad.channelId = options.getChannel('channel').id;
                 if (options.getInteger('interval')) ad.interval = options.getInteger('interval');
                 if (options.getInteger('delete') !== null) ad.deleteAfter = options.getInteger('delete');
                 if (options.getString('style')) ad.style = options.getString('style');
+                
                 startAdLoop(name, guild.id);
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete ad 🗑️').setStyle(ButtonStyle.Danger));
-                return await interaction.reply({ content: `⚙️ Ad **${name}** updated.`, components: [row], ephemeral: true });}
+                // التعديل هنا: editReply
+                return await interaction.editReply({ content: `⚙️ Ad **${name}** updated.`, components: [row] });
+            }
             if (commandName === 'clear') {
     await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
     return await interaction.editReply('Chat cleaned! 🧹');}
@@ -494,9 +503,17 @@ client.on('interactionCreate', async (interaction) => {
     const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
     const json = await res.json();
     return await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 Translation').setDescription(json[0].map(i => i[0]).join('')).setColor('#4285F4')] });}
-            if (commandName === 'vote') {
-                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('v_yes').setLabel('Yes ✅').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('v_no').setLabel('No ❌').setStyle(ButtonStyle.Danger));
-                return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('New Vote').setDescription(options.getString('question')).setColor('#f1c40f')], components: [row] });}
+                        if (commandName === 'vote') {
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('v_yes').setLabel('Yes ✅').setStyle(ButtonStyle.Success), 
+                    new ButtonBuilder().setCustomId('v_no').setLabel('No ❌').setStyle(ButtonStyle.Danger)
+                );
+                // التعديل هنا: editReply
+                return await interaction.editReply({ 
+                    embeds: [new EmbedBuilder().setTitle('New Vote').setDescription(options.getString('question')).setColor('#f1c40f')], 
+                    components: [row] 
+                });
+            }
             // ✅ [DATABASE] slash_control command handler
             if (commandName === 'slash_control') {
                    const targetCmd = options.getString('command_name');
