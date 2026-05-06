@@ -47,10 +47,17 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences,
         GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.GuildVoiceStates, // ✅ مضاف للـ Observer System
+        GatewayIntentBits.GuildVoiceStates,
     ],
+    presence: {
+        status: 'online',
+        activities: [{
+            name: 'Custom Status',
+            state: 'Version: 2.0',
+            type: 4 // النوع ده بيخلي الكلام يظهر لوحده (Custom)
+        }]
+    }
 });
-
 // Server Configuration
 const CONFIG = {
     WELCOME_CH: '1482881348204101768',
@@ -271,14 +278,12 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     sendDetailedLog(oldMessage.guild, 'Message Edited', 
         `📝 <@${oldMessage.author.id}> edited message in <#${oldMessage.channel.id}>:\n**Old:** ${oldMessage.content}\n**New:** ${newMessage.content}`, '#3498db');
 });
-
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); } catch (e) { console.error(e); }
     console.log(`Logged in as ${client.user.tag}`);
     updateLiveInfo();
 });
-
 // ============================================================
 // --- Main messageCreate (Automod + Anti-Link + AI Brain) ---
 // ============================================================
