@@ -19,6 +19,7 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences,
         GatewayIntentBits.GuildModeration,
+        GatewayIntentBits.GuildVoiceStates, // ✅ مضاف للـ Observer System
     ],
 });
 
@@ -42,6 +43,70 @@ const warnStorage = new Map();
 const pendingUpdates = new Map(); 
 const ADMIN_PASSWORD = "Pro@Robot510";
 let extraServerInfo = ""; 
+
+// ============================================================
+// --- ✅ [1] AI Global Brain & Memory System ---
+// ============================================================
+const chatMemory = new Map();
+
+async function getEliteAIResponse(userId, userMessage, guild) {
+    const memberCount = guild.memberCount;
+    const serverName = guild.name;
+    const owner = guild.members.cache.get(CONFIG.OWNER_ID)?.user.username || "Saif";
+
+    if (!chatMemory.has(userId)) {
+        chatMemory.set(userId, []);
+    }
+    let memory = chatMemory.get(userId);
+
+    const systemInstruction = {
+        role: "system",
+        content: `You are "Pro Robot", the autonomous Human-like Executive Manager of the Discord server "${serverName}".
+        - You are highly intelligent, observant, and act as if you own the server alongside ${owner}.
+        - Current Server Status: ${memberCount} members are currently under your supervision.
+        - Owner: ${owner} (<@${CONFIG.OWNER_ID}>).
+        - Current Location: Egypt.
+        - IDENTITY: You are not a simple bot; you are a sophisticated AI protector. 
+        - LANGUAGES: You are a polyglot. You MUST understand and respond fluently in ALL world languages (Arabic, English, etc.) based on the user's language.
+        - MEMORY: You remember previous parts of this conversation. Use the provided history to give continuous, smart answers.
+        - TONE: Professional, helpful, and authoritative.
+        - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`
+    };
+
+    memory.push({ role: "user", content: userMessage });
+
+    if (memory.length > 10) {
+        memory.splice(0, 2); 
+    }
+
+    try {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
+            },
+            body: JSON.stringify({
+                model: "mistral-medium",
+                messages: [systemInstruction, ...memory],
+                temperature: 0.7,
+                max_tokens: 500
+            })
+        });
+
+        const data = await response.json();
+        const aiReply = data.choices?.[0]?.message?.content || `I am currently analyzing server data. Please repeat your question. <@${CONFIG.OWNER_ID}>`;
+
+        memory.push({ role: "assistant", content: aiReply });
+        chatMemory.set(userId, memory);
+
+        return aiReply;
+
+    } catch (error) {
+        console.error("AI System Error:", error);
+        return `My connection to the main frame was interrupted. Try again! <@${CONFIG.OWNER_ID}>`;
+    }
+}
 
 // --- Audit Log Monitoring System (Radar Pro) ---
 async function sendDetailedLog(guild, title, details, color = '#3498db') {
@@ -70,39 +135,11 @@ async function sendDetailedLog(guild, title, details, color = '#3498db') {
 // --- Automod (Bad Words) ---
 const BAD_WORDS = ['word1', 'word2', 'word3']; 
 
-// --- Mistral AI Function ---
-async function getMistralResponse(userMessage, guild) {
-    const totalMembers = guild.memberCount;
-    const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
-
-    try {
-        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
-            },
-            body: JSON.stringify({
-                model: "mistral-small",
-                messages: [
-                    { role: "system", content: `You are "Pro Robot", the elite professional AI assistant and server observer.
-                    - Server Name: "Pro Server for MC".
-                    - Owner: Saif (<@${CONFIG.OWNER_ID}>).
-                    - Current Location: Egypt.
-                    - Monitoring: Total Members: ${totalMembers}, Online: ${onlineMembers}.
-                    - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."
-                    - Support ALL languages.` },
-                    { role: "user", content: userMessage }
-                ],
-                temperature: 0.5
-            })
-        });
-        const data = await response.json();
-        return data.choices?.[0]?.message?.content || `I don't know, you have to ask owner! <@${CONFIG.OWNER_ID}>`;
-    } catch (err) {
-        return `I don't know, ask the owner! <@${CONFIG.OWNER_ID}>`;
-    }
-}
+// ============================================================
+// --- ✅ [2] Legendary Anti-Link & Security System ---
+// ============================================================
+const inviteLinkRegex = /(https?:\/\/)?(www\.)?(discord\.(gg|io|me|li)|discordapp\.com\/invite)\/.+[a-z]/gi;
+const generalLinkRegex = /(https?:\/\/[^\s]+)/gi;
 
 // --- Command Registration ---
 const commands = [
@@ -157,6 +194,54 @@ client.on('roleCreate', (role) => sendDetailedLog(role.guild, 'Role Created', `R
 client.on('roleDelete', (role) => sendDetailedLog(role.guild, 'Role Deleted', `Role: **${role.name}**`, '#e74c3c'));
 client.on('guildBanAdd', (ban) => sendDetailedLog(ban.guild, 'Member Banned', `User: **${ban.user.tag}** was banned.`, '#c0392b'));
 
+// ============================================================
+// --- ✅ [3] The Observer System (Voice & Message Activity) ---
+// ============================================================
+client.on('voiceStateUpdate', (oldState, newState) => {
+    const member = newState.member;
+    const guild = newState.guild;
+
+    // Member Joins a Voice Channel
+    if (!oldState.channelId && newState.channelId) {
+        const channel = guild.channels.cache.get(newState.channelId);
+        sendDetailedLog(guild, 'Voice Join', 
+            `👤 <@${member.id}> joined voice channel: **${channel.name}**`, '#2ecc71');
+    }
+
+    // Member Leaves a Voice Channel
+    if (oldState.channelId && !newState.channelId) {
+        const channel = guild.channels.cache.get(oldState.channelId);
+        sendDetailedLog(guild, 'Voice Leave', 
+            `👤 <@${member.id}> left voice channel: **${channel.name}**`, '#e74c3c');
+    }
+
+    // Member Moves between Voice Channels
+    if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId) {
+        const oldChannel = guild.channels.cache.get(oldState.channelId);
+        const newChannel = guild.channels.cache.get(newState.channelId);
+        sendDetailedLog(guild, 'Voice Move', 
+            `👤 <@${member.id}> moved from **${oldChannel.name}** to **${newChannel.name}**`, '#f1c40f');
+    }
+
+    // Critical Actions (Deafen)
+    if (!oldState.selfDeaf && newState.selfDeaf) {
+        sendDetailedLog(guild, 'Member Deafen', `<@${member.id}> turned on **Server Deafen**.`, '#95a5a6');
+    }
+});
+
+// Advanced Message Monitoring (Edits & Deletes)
+client.on('messageDelete', (message) => {
+    if (message.author?.bot) return;
+    sendDetailedLog(message.guild, 'Message Deleted', 
+        `🗑️ Message by <@${message.author.id}> deleted in <#${message.channel.id}>:\n**Content:** ${message.content || "Empty/Image"}`, '#e74c3c');
+});
+
+client.on('messageUpdate', (oldMessage, newMessage) => {
+    if (oldMessage.author?.bot || oldMessage.content === newMessage.content) return;
+    sendDetailedLog(oldMessage.guild, 'Message Edited', 
+        `📝 <@${oldMessage.author.id}> edited message in <#${oldMessage.channel.id}>:\n**Old:** ${oldMessage.content}\n**New:** ${newMessage.content}`, '#3498db');
+});
+
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); } catch (e) { console.error(e); }
@@ -164,11 +249,53 @@ client.on('ready', async () => {
     updateLiveInfo();
 });
 
-// Chat handling
+// ============================================================
+// --- Main messageCreate (Automod + Anti-Link + AI Brain) ---
+// ============================================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // --- Automod ---
+    // --- [2] Anti-Link System (Runs first, before everything) ---
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const content = message.content.toLowerCase();
+
+        // Reset regex lastIndex to avoid bugs with global flags
+        inviteLinkRegex.lastIndex = 0;
+        generalLinkRegex.lastIndex = 0;
+
+        const hasInvite = inviteLinkRegex.test(content);
+        const hasLink = generalLinkRegex.test(content);
+        const bypassAttempt = content.includes('discord . gg') || content.includes('dot com') || content.includes('. gg/');
+
+        if (hasInvite || bypassAttempt || hasLink) {
+            await message.delete().catch(() => {});
+
+            let warns = (warnStorage.get(message.author.id) || 0) + 1;
+            warnStorage.set(message.author.id, warns);
+
+            if (warns === 1) {
+                const warnEmbed = new EmbedBuilder()
+                    .setTitle('🚫 Security Violation')
+                    .setDescription(`Stop right there <@${message.author.id}>! Advertising or sending unauthorized links is strictly forbidden.`)
+                    .setColor('#e74c3c')
+                    .setFooter({ text: 'Next violation will result in a timeout.' });
+                const m = await message.channel.send({ embeds: [warnEmbed] });
+                setTimeout(() => m.delete().catch(() => {}), 10000);
+
+            } else if (warns === 2) {
+                await message.member.timeout(60 * 60 * 1000, 'Sending links/Advertising').catch(() => {});
+                message.channel.send(`🤐 <@${message.author.id}> has been muted for 1 hour for repeated link violations.`);
+
+            } else {
+                await message.member.ban({ reason: 'Persistent Advertising & Security Breach' }).catch(() => {});
+                message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for extreme advertising.`);
+                sendDetailedLog(message.guild, 'User Banned (Anti-Link)', `User: **${message.author.tag}** was banned for trying to bypass link security.`, '#c0392b');
+            }
+            return; // Stop processing
+        }
+    }
+
+    // --- Automod (Bad Words) ---
     const hasBadWord = BAD_WORDS.some(word => message.content.toLowerCase().includes(word));
     if (hasBadWord) {
         await message.delete().catch(() => {});
@@ -192,16 +319,18 @@ client.on('messageCreate', async (message) => {
         try {
             await message.channel.sendTyping();
             const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
-            const text = await getMistralResponse(cleanContent || message.content, message.guild);
+
+            // --- [1] Using Elite AI Brain with Memory ---
+            const text = await getEliteAIResponse(message.author.id, cleanContent || message.content, message.guild);
             
             if (text) {
-                // لو الرد فيه "button" أو طلب تعديل، نظهر زر الباسورد
-                const row = new ActionRowBuilder();
                 const isUpdateTask = cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف");
 
                 if (isUpdateTask) {
                     pendingUpdates.set(message.author.id, cleanContent);
-                    row.addComponents(new ButtonBuilder().setCustomId('open_admin_modal').setLabel('Enter Password 🔐').setStyle(ButtonStyle.Danger));
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('open_admin_modal').setLabel('Enter Password 🔐').setStyle(ButtonStyle.Danger)
+                    );
                     const botMsg = await message.reply({ content: text, components: [row] });
                     if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
                 } else {
@@ -222,7 +351,7 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-    // مودال الرتب القديم
+    // مودال الرتب
     if (interaction.isButton() && interaction.customId === 'open_rank_modal') {
         const modal = new ModalBuilder().setCustomId('rank_modal').setTitle('Rank Request');
         const userField = new TextInputBuilder().setCustomId('xbox_user').setLabel("Username").setStyle(TextInputStyle.Short).setPlaceholder("Write your Xbox username").setRequired(true);
@@ -231,7 +360,7 @@ client.on('interactionCreate', async (interaction) => {
         return await interaction.showModal(modal);
     }
 
-    // --- [جديد] مودال كلمة السر للتعديل ---
+    // مودال كلمة السر للتعديل
     if (interaction.isButton() && interaction.customId === 'open_admin_modal') {
         const modal = new ModalBuilder().setCustomId('admin_pass_modal').setTitle('Admin Verification');
         const passField = new TextInputBuilder().setCustomId('admin_password_input').setLabel("Admin Password").setStyle(TextInputStyle.Short).setPlaceholder("Enter Pro Robot Password").setRequired(true);
@@ -248,7 +377,7 @@ client.on('interactionCreate', async (interaction) => {
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
 
-    // --- [جديد] معالجة مودال كلمة السر ---
+    // معالجة مودال كلمة السر
     if (interaction.isModalSubmit() && interaction.customId === 'admin_pass_modal') {
         const enteredPass = interaction.fields.getTextInputValue('admin_password_input');
         if (enteredPass === ADMIN_PASSWORD) {
