@@ -186,6 +186,15 @@ const commands = [
         .setDescription('Add a reaction to a specific message using its link')
         .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
         .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true)),
+    // ✅ [NEW] Picture Command
+    new SlashCommandBuilder()
+        .setName('picture')
+        .setDescription('Send pictures with auto-send and auto-delete timers')
+        .addAttachmentOption(o => o.setName('image').setDescription('The main image to send').setRequired(true))
+        .addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'}))
+        .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes)').setRequired(true))
+        .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true))
+        .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
 ].map(c => c.toJSON());
 
 function startAdLoop(adName, guildId) {
@@ -571,6 +580,35 @@ client.on('interactionCreate', async (interaction) => {
                     console.error(error);
                     return await interaction.editReply({ content: "❌ Failed to add reaction. Make sure the link and emoji are valid." });
                 }
+            }
+
+            // ✅ [NEW] Picture Command Handler
+            if (commandName === 'picture') {
+                const image = options.getAttachment('image');
+                const style = options.getString('style');
+                const delay = options.getInteger('delay_send');
+                const delAfter = options.getInteger('delete_after');
+                const caption = options.getString('caption') || "";
+
+                await interaction.editReply({ content: `✅ Picture scheduled! Will be sent in ${delay} min and deleted after ${delAfter} min.` });
+
+                setTimeout(async () => {
+                    let sent;
+                    if (style === 'embed') {
+                        const embed = new EmbedBuilder()
+                            .setDescription(caption)
+                            .setImage(image.url)
+                            .setColor('#3498db')
+                            .setTimestamp();
+                        sent = await channel.send({ embeds: [embed] }).catch(() => {});
+                    } else {
+                        sent = await channel.send({ content: caption, files: [image.url] }).catch(() => {});
+                    }
+
+                    if (sent && delAfter > 0) {
+                        setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
+                    }
+                }, delay * 60000);
             }
 
         } catch (e) { 
