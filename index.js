@@ -12,12 +12,10 @@ const app = express();
 // ============================================================
 const mongoose = require('mongoose');
 
-// Connecting to the database using the Environment Variable from Railway
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Pro-Robot Database: Connection Successful'))
     .catch(err => console.error('❌ Pro-Robot Database: Connection Error', err));
 
-// Defining the Schema (How our data is organized in the database)
 const serverSchema = new mongoose.Schema({
     guildId: String,
     cmdPermissions: { type: Map, of: String, default: {} },
@@ -26,7 +24,6 @@ const serverSchema = new mongoose.Schema({
 
 const ServerModel = mongoose.model('ServerData', serverSchema);
 
-// Function to fetch or create database entry for a specific server
 async function getDB(guildId) {
     let data = await ServerModel.findOne({ guildId });
     if (!data) {
@@ -35,7 +32,6 @@ async function getDB(guildId) {
     return data;
 }
 
-// Server keep-alive
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
 app.listen(process.env.PORT || 3000);
 
@@ -53,12 +49,12 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 2.0',
-            type: 4 // النوع ده بيخلي الكلام يظهر لوحده (Custom)
+            state: 'Version: 2.2',
+            type: 4
         }]
     }
 });
-// Server Configuration
+
 const CONFIG = {
     WELCOME_CH: '1482881348204101768',
     AUTO_ROLE: '1482883802186514615',
@@ -74,7 +70,6 @@ const CONFIG = {
 const adsStorage = new Map();
 const warnStorage = new Map();
 
-// --- نظام التعديل بالكلمة السر (عن طريق المودال) ---
 const pendingUpdates = new Map(); 
 const ADMIN_PASSWORD = "Pro@Robot510";
 let extraServerInfo = ""; 
@@ -143,7 +138,6 @@ async function getEliteAIResponse(userId, userMessage, guild) {
     }
 }
 
-// --- Audit Log Monitoring System (Radar Pro) ---
 async function sendDetailedLog(guild, title, details, color = '#3498db') {
     const logChannel = guild.channels.cache.get(CONFIG.SUBMIT_LOG);
     if (!logChannel) return;
@@ -167,7 +161,6 @@ async function sendDetailedLog(guild, title, details, color = '#3498db') {
     }, 2000);
 }
 
-// --- Automod (Bad Words) ---
 const BAD_WORDS = ['word1', 'word2', 'word3']; 
 
 // ============================================================
@@ -186,8 +179,13 @@ const commands = [
     new SlashCommandBuilder().setName('translate').setDescription('Translate text').addStringOption(o => o.setName('text').setDescription('The text').setRequired(true)).addStringOption(o => o.setName('to').setDescription('Language code (e.g: ar)').setRequired(true)),
     new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote').addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
     new SlashCommandBuilder().setName('role').setDescription('Select a member and a rank').addUserOption(o => o.setName('user').setDescription('The member to give the rank to').setRequired(true)).addRoleOption(o => o.setName('rank').setDescription('The rank to give').setRequired(true)),
-    // ✅ [DATABASE] New command for slash control
     new SlashCommandBuilder().setName('slash_control').setDescription('Restrict a command to a specific role').addStringOption(o => o.setName('command_name').setDescription('The command to restrict').setRequired(true)).addRoleOption(o => o.setName('allowed_role').setDescription('The role allowed to use this command').setRequired(true)),
+    // ✅ [NEW] Reaction Command
+    new SlashCommandBuilder()
+        .setName('reaction')
+        .setDescription('Add a reaction to a specific message using its link')
+        .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
+        .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true)),
 ].map(c => c.toJSON());
 
 function startAdLoop(adName, guildId) {
@@ -215,7 +213,37 @@ client.on('guildUpdate', (oldGuild, newGuild) => {
     if (oldGuild.icon !== newGuild.icon) sendDetailedLog(newGuild, 'Server Icon Changed', `Server avatar has been updated.`, '#9b59b6');
 });
 
-client.on('guildMemberUpdate', (oldMember, newMember) => {
+// ✅ [NEW] guildMemberUpdate - Boost System + Original Code
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+
+    // --- [SERVER BOOST SYSTEM] ---
+    if (!oldMember.premiumSince && newMember.premiumSince) {
+        const BOOST_ROLE_ID = '1496789784524357703';
+        const BOOST_CHANNEL_ID = '1482934834899714048';
+
+        try {
+            await newMember.roles.add(BOOST_ROLE_ID);
+        } catch (err) {
+            console.error("Failed to assign boost role:", err);
+        }
+
+        const boostChannel = newMember.guild.channels.cache.get(BOOST_CHANNEL_ID);
+        if (boostChannel) {
+            const boostMsg = await boostChannel.send({
+                content: `@everyone\n<@${newMember.id}> Boosted the server! 🎉\n- Now <@${newMember.id}> have <@&${BOOST_ROLE_ID}> rank!`
+            });
+            if (boostMsg) await boostMsg.react('🎉').catch(() => {});
+        }
+
+        sendDetailedLog(
+            newMember.guild, 
+            'Server Boosted! 💎', 
+            `User: <@${newMember.id}> has just boosted the server.\nStatus: **Role Assigned Successfully**`, 
+            '#ffff55' 
+        );
+    }
+
+    // --- Original Code ---
     if (oldMember.nickname !== newMember.nickname) {
         sendDetailedLog(newMember.guild, 'Nickname Changed', `User: <@${newMember.id}>\nOld: \`${oldMember.nickname || 'None'}\`\nNew: \`${newMember.nickname || 'Original'}\``);
     }
@@ -238,21 +266,18 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     const member = newState.member;
     const guild = newState.guild;
 
-    // Member Joins a Voice Channel
     if (!oldState.channelId && newState.channelId) {
         const channel = guild.channels.cache.get(newState.channelId);
         sendDetailedLog(guild, 'Voice Join', 
             `👤 <@${member.id}> joined voice channel: **${channel.name}**`, '#2ecc71');
     }
 
-    // Member Leaves a Voice Channel
     if (oldState.channelId && !newState.channelId) {
         const channel = guild.channels.cache.get(oldState.channelId);
         sendDetailedLog(guild, 'Voice Leave', 
             `👤 <@${member.id}> left voice channel: **${channel.name}**`, '#e74c3c');
     }
 
-    // Member Moves between Voice Channels
     if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId) {
         const oldChannel = guild.channels.cache.get(oldState.channelId);
         const newChannel = guild.channels.cache.get(newState.channelId);
@@ -260,13 +285,11 @@ client.on('voiceStateUpdate', (oldState, newState) => {
             `👤 <@${member.id}> moved from **${oldChannel.name}** to **${newChannel.name}**`, '#f1c40f');
     }
 
-    // Critical Actions (Deafen)
     if (!oldState.selfDeaf && newState.selfDeaf) {
         sendDetailedLog(guild, 'Member Deafen', `<@${member.id}> turned on **Server Deafen**.`, '#95a5a6');
     }
 });
 
-// Advanced Message Monitoring (Edits & Deletes)
 client.on('messageDelete', (message) => {
     if (message.author?.bot) return;
     sendDetailedLog(message.guild, 'Message Deleted', 
@@ -278,23 +301,23 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     sendDetailedLog(oldMessage.guild, 'Message Edited', 
         `📝 <@${oldMessage.author.id}> edited message in <#${oldMessage.channel.id}>:\n**Old:** ${oldMessage.content}\n**New:** ${newMessage.content}`, '#3498db');
 });
+
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); } catch (e) { console.error(e); }
     console.log(`Logged in as ${client.user.tag}`);
     updateLiveInfo();
 });
+
 // ============================================================
 // --- Main messageCreate (Automod + Anti-Link + AI Brain) ---
 // ============================================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // --- [2] Anti-Link System (Runs first, before everything) ---
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const content = message.content.toLowerCase();
 
-        // Reset regex lastIndex to avoid bugs with global flags
         inviteLinkRegex.lastIndex = 0;
         generalLinkRegex.lastIndex = 0;
 
@@ -326,11 +349,10 @@ client.on('messageCreate', async (message) => {
                 message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for extreme advertising.`);
                 sendDetailedLog(message.guild, 'User Banned (Anti-Link)', `User: **${message.author.tag}** was banned for trying to bypass link security.`, '#c0392b');
             }
-            return; // Stop processing
+            return;
         }
     }
 
-    // --- Automod (Bad Words) ---
     const hasBadWord = BAD_WORDS.some(word => message.content.toLowerCase().includes(word));
     if (hasBadWord) {
         await message.delete().catch(() => {});
@@ -355,7 +377,6 @@ client.on('messageCreate', async (message) => {
             await message.channel.sendTyping();
             const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
 
-            // --- [1] Using Elite AI Brain with Memory ---
             const text = await getEliteAIResponse(message.author.id, cleanContent || message.content, message.guild);
             
             if (text) {
@@ -386,7 +407,6 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-    // مودال الرتب
     if (interaction.isButton() && interaction.customId === 'open_rank_modal') {
         const modal = new ModalBuilder().setCustomId('rank_modal').setTitle('Rank Request');
         const userField = new TextInputBuilder().setCustomId('xbox_user').setLabel("Username").setStyle(TextInputStyle.Short).setPlaceholder("Write your Xbox username").setRequired(true);
@@ -395,7 +415,6 @@ client.on('interactionCreate', async (interaction) => {
         return await interaction.showModal(modal);
     }
 
-    // مودال كلمة السر للتعديل
     if (interaction.isButton() && interaction.customId === 'open_admin_modal') {
         const modal = new ModalBuilder().setCustomId('admin_pass_modal').setTitle('Admin Verification');
         const passField = new TextInputBuilder().setCustomId('admin_password_input').setLabel("Admin Password").setStyle(TextInputStyle.Short).setPlaceholder("Enter Pro Robot Password").setRequired(true);
@@ -403,7 +422,6 @@ client.on('interactionCreate', async (interaction) => {
         return await interaction.showModal(modal);
     }
 
-    // معالجة مودال الرتب
     if (interaction.isModalSubmit() && interaction.customId === 'rank_modal') {
         const xbox = interaction.fields.getTextInputValue('xbox_user');
         const rank = interaction.fields.getTextInputValue('rank_type');
@@ -412,7 +430,6 @@ client.on('interactionCreate', async (interaction) => {
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
 
-    // معالجة مودال كلمة السر
     if (interaction.isModalSubmit() && interaction.customId === 'admin_pass_modal') {
         const enteredPass = interaction.fields.getTextInputValue('admin_password_input');
         if (enteredPass === ADMIN_PASSWORD) {
@@ -434,41 +451,41 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isChatInputCommand()) {
-            const { commandName, options, guild, channel } = interaction;
-    await interaction.deferReply({ ephemeral: true }).catch(() => {});
-    try {
-        const dbData = await getDB(interaction.guild.id);
-        const allowedRoleId = dbData.cmdPermissions.get(commandName);
+        const { commandName, options, guild, channel } = interaction;
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        try {
+            const dbData = await getDB(interaction.guild.id);
+            const allowedRoleId = dbData.cmdPermissions.get(commandName);
 
-        if (allowedRoleId && 
-            !interaction.member.roles.cache.has(allowedRoleId) && 
-            !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            
-            return await interaction.editReply({ 
-                content: `❌ Access Denied! This command requires the <@&${allowedRoleId}> role.`
-            });
-        }
-            if (commandName === 'ping') return await interaction.editReply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
-            if (commandName === 'role') {
-    const targetUser = options.getMember('user');
-    const targetRole = options.getRole('rank');
-    const roleChan = guild.channels.cache.get(CONFIG.ROLE_CHANNEL);
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) return await interaction.editReply({ content: "❌ You don't have permission!" });
-    await targetUser.roles.add(targetRole).catch(e => console.error(e));
-    const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
-    if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
-    return await interaction.editReply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.` });
+            if (allowedRoleId && 
+                !interaction.member.roles.cache.has(allowedRoleId) && 
+                !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                
+                return await interaction.editReply({ 
+                    content: `❌ Access Denied! This command requires the <@&${allowedRoleId}> role.`
+                });
             }
-                  if (commandName === 'send') {
+
+            if (commandName === 'ping') return await interaction.editReply(`🏓 Pong! Speed: \`${client.ws.ping}ms\``);
+
+            if (commandName === 'role') {
+                const targetUser = options.getMember('user');
+                const targetRole = options.getRole('rank');
+                const roleChan = guild.channels.cache.get(CONFIG.ROLE_CHANNEL);
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) return await interaction.editReply({ content: "❌ You don't have permission!" });
+                await targetUser.roles.add(targetRole).catch(e => console.error(e));
+                const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
+                if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
+                return await interaction.editReply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.` });
+            }
+
+            if (commandName === 'send') {
                 const msg = options.getString('message');
                 const style = options.getString('style');
                 const delay = options.getInteger('delay_send');
                 const delAfter = options.getInteger('delete_after');
                 const color = options.getString('color') || '#3498db';
-                
-                // التعديل هنا: استخدمنا editReply وشلنا ephemeral
                 await interaction.editReply({ content: `✅ The message will be sent in ${delay} minute(s).` });
-                
                 setTimeout(async () => {
                     let sent;
                     if (style === 'embed') { sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(msg).setColor(color)] }).catch(() => {}); }
@@ -476,62 +493,87 @@ client.on('interactionCreate', async (interaction) => {
                     if (sent && delAfter > 0) setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
                 }, delay * 60000);
             }
-                        if (commandName === 'ads_set') {
+
+            if (commandName === 'ads_set') {
                 const name = options.getString('name');
                 const data = { name, text: options.getString('text'), channelId: options.getChannel('channel').id, interval: options.getInteger('interval'), deleteAfter: options.getInteger('delete'), style: options.getString('style'), timer: null, lastMsgId: null };
                 adsStorage.set(name, data);
                 startAdLoop(name, guild.id);
-                // التعديل هنا: editReply
                 return await interaction.editReply({ content: `✅ Ad activated: **${name}**` });
             }
-                if (commandName === 'ads_edit') {
+
+            if (commandName === 'ads_edit') {
                 const name = options.getString('name');
                 const ad = adsStorage.get(name);
-                // التعديل هنا: editReply
                 if (!ad) return await interaction.editReply({ content: "❌ Not found." });
-                
                 if (options.getString('text')) ad.text = options.getString('text');
                 if (options.getChannel('channel')) ad.channelId = options.getChannel('channel').id;
                 if (options.getInteger('interval')) ad.interval = options.getInteger('interval');
                 if (options.getInteger('delete') !== null) ad.deleteAfter = options.getInteger('delete');
                 if (options.getString('style')) ad.style = options.getString('style');
-                
                 startAdLoop(name, guild.id);
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`stop_ad_${name}`).setLabel('Delete ad 🗑️').setStyle(ButtonStyle.Danger));
-                // التعديل هنا: editReply
                 return await interaction.editReply({ content: `⚙️ Ad **${name}** updated.`, components: [row] });
             }
+
             if (commandName === 'clear') {
-    await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
-    return await interaction.editReply('Chat cleaned! 🧹');}
+                await channel.bulkDelete(Math.min(options.getInteger('amount'), 100)).catch(() => {});
+                return await interaction.editReply('Chat cleaned! 🧹');
+            }
+
             if (commandName === 'translate') {
-    const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
-    const json = await res.json();
-    return await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 Translation').setDescription(json[0].map(i => i[0]).join('')).setColor('#4285F4')] });}
-                        if (commandName === 'vote') {
+                const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${options.getString('to').toLowerCase()}&dt=t&q=${encodeURI(options.getString('text'))}`);
+                const json = await res.json();
+                return await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🌐 Translation').setDescription(json[0].map(i => i[0]).join('')).setColor('#4285F4')] });
+            }
+
+            if (commandName === 'vote') {
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('v_yes').setLabel('Yes ✅').setStyle(ButtonStyle.Success), 
                     new ButtonBuilder().setCustomId('v_no').setLabel('No ❌').setStyle(ButtonStyle.Danger)
                 );
-                // التعديل هنا: editReply
                 return await interaction.editReply({ 
                     embeds: [new EmbedBuilder().setTitle('New Vote').setDescription(options.getString('question')).setColor('#f1c40f')], 
                     components: [row] 
                 });
             }
-            // ✅ [DATABASE] slash_control command handler
-            if (commandName === 'slash_control') {
-                   const targetCmd = options.getString('command_name');
-    const role = options.getRole('allowed_role');
-    
-    dbData.cmdPermissions.set(targetCmd, role.id);
-    await dbData.save(); 
 
-    return await interaction.editReply({ 
-        content: `✅ Settings updated! The command \`/${targetCmd}\` is now restricted to <@&${role.id}>.`
-    });
+            if (commandName === 'slash_control') {
+                const targetCmd = options.getString('command_name');
+                const role = options.getRole('allowed_role');
+                dbData.cmdPermissions.set(targetCmd, role.id);
+                await dbData.save(); 
+                return await interaction.editReply({ 
+                    content: `✅ Settings updated! The command \`/${targetCmd}\` is now restricted to <@&${role.id}>.`
+                });
             }
-                } catch (e) { 
+
+            // ✅ [NEW] Reaction Command Handler
+            if (commandName === 'reaction') {
+                const link = options.getString('link');
+                const emoji = options.getString('emoji');
+
+                const linkParts = link.split('/');
+                const channelId = linkParts[linkParts.length - 2];
+                const messageId = linkParts[linkParts.length - 1];
+
+                try {
+                    const targetChannel = await guild.channels.fetch(channelId);
+                    if (!targetChannel) return await interaction.editReply("❌ Channel not found.");
+
+                    const targetMsg = await targetChannel.messages.fetch(messageId);
+                    if (!targetMsg) return await interaction.editReply("❌ Message not found.");
+
+                    await targetMsg.react(emoji);
+                    return await interaction.editReply({ content: `✅ Successfully reacted with ${emoji} to the message!` });
+
+                } catch (error) {
+                    console.error(error);
+                    return await interaction.editReply({ content: "❌ Failed to add reaction. Make sure the link and emoji are valid." });
+                }
+            }
+
+        } catch (e) { 
             console.error("❌ Command Error:", e);
             if (interaction.deferred) await interaction.editReply("❌ An error occurred.").catch(() => {});
         }
