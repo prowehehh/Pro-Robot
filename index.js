@@ -80,23 +80,66 @@ let extraServerInfo = "";
 // ============================================================
 // --- ✅ [NEW] DM Logger - Logs All Bot DM Activity ---
 // ============================================================
-async function logDMActivity(userId, username, content, direction = 'IN') {
+async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraData = {}) {
     const logCh = client.channels.cache.get(CONFIG.DM_LOG_CH);
     if (!logCh) return;
 
-    const arrow = direction === 'IN' ? '📨 DM Received (User → Bot)' : '📤 DM Sent (Bot → User)';
-    const color = direction === 'IN' ? '#3498db' : '#2ecc71';
+    let logEmbed;
 
-    const logEmbed = new EmbedBuilder()
-        .setTitle(`${arrow}`)
-        .addFields(
-            { name: '👤 User', value: `<@${userId}> \`(${username})\``, inline: true },
-            { name: '🆔 User ID', value: `\`${userId}\``, inline: true }
-        )
-        .setDescription(`**📝 Message Content:**\n\`\`\`\n${content || '[Empty / Image Only]'}\n\`\`\``)
-        .setColor(color)
-        .setTimestamp()
-        .setFooter({ text: 'Pro Robot DM Intelligence System' });
+    if (type === 'IN_TEXT') {
+        logEmbed = new EmbedBuilder()
+            .setTitle('📥 INCOMING PRIVATE SIGNAL')
+            .addFields(
+                { name: 'Sender', value: `${username}`, inline: true },
+                { name: 'User ID', value: `${userId}`, inline: true },
+                { name: 'Message Content', value: content || '[Empty]', inline: false }
+            )
+            .setColor('#f1c40f')
+            .setTimestamp();
+
+    } else if (type === 'IN_MEDIA') {
+        logEmbed = new EmbedBuilder()
+            .setTitle('🖼️ PRIVATE MEDIA DETECTED')
+            .addFields(
+                { name: 'Sender', value: `${username}`, inline: true },
+                { name: 'Status', value: 'Attachment Received', inline: true },
+                { name: 'Content', value: '(The image will be displayed below)', inline: false }
+            )
+            .setColor('#e67e22')
+            .setTimestamp();
+        if (extraData.imageUrl) logEmbed.setImage(extraData.imageUrl);
+
+    } else if (type === 'AI_RESPONSE') {
+        logEmbed = new EmbedBuilder()
+            .setTitle('🤖 AI AUTOMATIC RESPONSE')
+            .addFields(
+                { name: 'Target User', value: `${username}`, inline: true },
+                { name: 'AI Response', value: content || '[Empty]', inline: false }
+            )
+            .setColor('#3498db')
+            .setTimestamp();
+
+    } else if (type === 'ALERT') {
+        logEmbed = new EmbedBuilder()
+            .setTitle('⚠️ DM SYSTEM ALERT')
+            .addFields(
+                { name: 'User', value: `${username}`, inline: true },
+                { name: 'Activity', value: content || 'Multiple messages detected.', inline: false }
+            )
+            .setColor('#e74c3c')
+            .setTimestamp();
+
+    } else {
+        // Fallback for outgoing system/mod DMs
+        logEmbed = new EmbedBuilder()
+            .setTitle('📤 DM Sent (Bot → User)')
+            .addFields(
+                { name: 'Target', value: `${username} \`(${userId})\``, inline: true },
+                { name: 'Content', value: content || '[Empty]', inline: false }
+            )
+            .setColor('#2ecc71')
+            .setTimestamp();
+    }
 
     await logCh.send({ embeds: [logEmbed] }).catch(() => {});
 }
@@ -116,7 +159,7 @@ async function sendModDM(user, action, reason, guildName) {
             )
             .setColor('#e74c3c')
             .setTimestamp()
-            .setFooter({ text: 'Pro Robot Security System • Pro Server for MC' });
+            .setFooter({ text: 'Pro Robot Security System • Pro Server' });
 
         await dmChannel.send({ embeds: [modEmbed] });
         await logDMActivity(user.id, user.tag, `[🔨 MOD NOTIFICATION] Action: ${action} | Reason: ${reason}`, 'OUT');
@@ -246,7 +289,7 @@ const commands = [
     // ✅ [NEW] /dm Command — Full DM Control Panel
     new SlashCommandBuilder()
         .setName('dm')
-        .setDescription('📬 Full DM control panel — send messages or images to users via DM')
+        .setDescription('Full DM control panel — send messages or images to users via DM')
         .addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'}))
         .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes, 0 = instant)').setRequired(true))
         .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete after X minutes (0 = never)').setRequired(true))
@@ -310,7 +353,7 @@ function startDMAdsLoop(adName, guildId) {
                 const dm = await user.createDM();
                 const payload = buildPayload(ad.color);
                 const sent = await dm.send(payload);
-                await logDMActivity(user.id, user.tag, ad.msgContent || '[Image]', 'OUT');
+                await logDMActivity(user.id, user.tag, ad.msgContent || '[Image]', 'AI_RESPONSE');
                 if (ad.deleteAfter > 0) setTimeout(() => sent.delete().catch(() => {}), ad.deleteAfter * 60000);
             } catch (e) {
                 console.error(`❌ DM Ad failed for ${user.tag}:`, e);
@@ -473,9 +516,14 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // ✅ [NEW] Log incoming DMs to the bot
+    // ✅ [NEW] Log incoming DMs to the bot — text or media
     if (message.channel.type === ChannelType.DM) {
-        await logDMActivity(message.author.id, message.author.tag, message.content, 'IN');
+        if (message.attachments.size > 0) {
+            const attachment = message.attachments.first();
+            await logDMActivity(message.author.id, message.author.username, '', 'IN_MEDIA', { imageUrl: attachment.url });
+        } else {
+            await logDMActivity(message.author.id, message.author.username, message.content, 'IN_TEXT');
+        }
         return;
     }
 
@@ -605,14 +653,14 @@ client.on('interactionCreate', async (interaction) => {
         const logCh = client.channels.cache.get(CONFIG.SUBMIT_LOG);
         if (logCh) await logCh.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
         // ✅ [NEW] Log modal submit to DM log
-        await logDMActivity(interaction.user.id, interaction.user.tag, `[📋 RANK MODAL SUBMIT] Xbox: ${xbox} | Rank: ${rank}`, 'IN');
+        await logDMActivity(interaction.user.id, interaction.user.tag, `[📋 RANK MODAL SUBMIT] Xbox: ${xbox} | Rank: ${rank}`, 'IN_TEXT');
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'admin_pass_modal') {
         const enteredPass = interaction.fields.getTextInputValue('admin_password_input');
         // ✅ [NEW] Log password attempt to DM log
-        await logDMActivity(interaction.user.id, interaction.user.tag, `[🔐 ADMIN MODAL ATTEMPT] Password entered: ${enteredPass === ADMIN_PASSWORD ? '✅ Correct' : '❌ Wrong'}`, 'IN');
+        await logDMActivity(interaction.user.id, interaction.user.tag, `[🔐 ADMIN MODAL ATTEMPT] Password entered: ${enteredPass === ADMIN_PASSWORD ? '✅ Correct' : '❌ Wrong'}`, 'IN_TEXT');
         if (enteredPass === ADMIN_PASSWORD) {
             extraServerInfo = pendingUpdates.get(interaction.user.id) || "Updated via AI";
             pendingUpdates.delete(interaction.user.id);
@@ -828,7 +876,7 @@ client.on('interactionCreate', async (interaction) => {
                         const payload = buildDMPayload();
                         const sent = await dmChannel.send(payload);
                         // Log to DM log channel
-                        await logDMActivity(user.id, user.tag, msgContent || caption || '[📷 Image Only]', 'OUT');
+                        await logDMActivity(user.id, user.tag, msgContent || caption || '[📷 Image Only]', 'AI_RESPONSE');
                         // Auto-delete
                         if (delAfter > 0) setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
                         return true;
@@ -923,43 +971,28 @@ client.on('guildMemberAdd', async (member) => {
     await member.roles.add(rolesToAdd).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        // ✅ [UPDATED] Beautiful & stylish welcome message
-        const welcomeEmbed = new EmbedBuilder()
-            .setTitle('🌟 Welcome to Pro Server for MC!')
-            .setDescription(
-                `> 🎉 **Hey <@${member.id}>, you made it!**\n\n` +
-                `╔══════════════════════════╗\n` +
-                `║  🏆  **PRO SERVER FOR MC**  🏆  ║\n` +
-                `╚══════════════════════════╝\n\n` +
-                `🎮 **You are now officially part of Team PRO!**\n` +
-                `✨ Get ready for an amazing experience!\n` +
-                `💬 Chat with us and enjoy your time here.\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                `📌 **Important Links:**\n` +
-                `→ 📜 Rules: <#1482874761951576228>\n` +
-                `→ 🎭 Roles: <#1482901664951304222>\n` +
-                `→ 🤖 AI Help: <#${CONFIG.HELP_CH}>\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                `👑 Owner: <@${CONFIG.OWNER_ID}>\n` +
-                `🤖 Managed by: <@${CONFIG.BOT_ID}>\n` +
-                `👥 You are member **#${member.guild.memberCount}**\n\n` +
-                `💫 *We're so happy to have you here!* ❤️`
-            )
-            .setColor('#3498db')
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-            .setImage('https://i.imgur.com/5JhpFnx.gif')
-            .setFooter({ text: `Pro Server for MC • ${new Date().toLocaleDateString('en-GB')}` })
-            .setTimestamp();
+        // ✅ [UPDATED] Clean text-style welcome message
+        const welcomeContent =
+            `<@${member.id}>\n` +
+            `## 𝗪𝗲𝗹𝗰𝗼𝗺𝗲!\n` +
+            `[¡}================{!}================[¡}\n` +
+            `- You are now from team PRO! 🥳\n` +
+            `- Join us and you will be enjoying! 🎉\n` +
+            `- Chat with us and go to read rules server.\n` +
+            `[]--------------------!--------------------[]\n` +
+            `→ <#1482874761951576228> | <#1482901664951304222>\n` +
+            `[¡}================{!}================[¡}\n` +
+            `Thank you! ❤️`;
 
-        const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
+        const m = await welcomeCh.send({ content: welcomeContent }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
 
     // ✅ [NEW] Send a personal welcome DM to new member
     await sendModDM(
         member.user,
-        '🎉 Welcome to Pro Server for MC!',
-        `Hey **${member.user.username}**! 👋\n\nYou have successfully joined **Pro Server for MC**. We're thrilled to have you!\n\n📜 Make sure to read the rules and enjoy your time with us. If you need any help, ask our AI in the help channel!\n\n— *Pro Robot* 🤖`,
+        '🎉 Welcome to Pro Server!',
+        `Hey **${member.user.username}**! 👋\n\nYou have successfully joined **Pro Server**. We're thrilled to have you!\n\n📜 Make sure to read the rules and enjoy your time with us. If you need any help, ask our AI in the help channel!\n\n— *Pro Robot* 🤖`,
         member.guild.name
     );
 
