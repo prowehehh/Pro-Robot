@@ -51,7 +51,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 3.5.0',
+            state: 'Version: 2.2',
             type: 4
         }]
     }
@@ -66,7 +66,8 @@ const CONFIG = {
     HELP_CH: '1497909981725593712',
     SUBMIT_LOG: '1494367980702797935',
     ROLE_CHANNEL: '1482874761951576228',
-    INFO_CH: '1484641160394702958'
+    INFO_CH: '1484641160394702958',
+    DM_LOG_CH: '1502084414421729340'
 };
 
 const adsStorage = new Map();
@@ -82,9 +83,9 @@ let extraServerInfo = "";
 const chatMemory = new Map();
 
 async function getEliteAIResponse(userId, userMessage, guild) {
-    const memberCount = guild.memberCount;
-    const serverName = guild.name;
-    const owner = guild.members.cache.get(CONFIG.OWNER_ID)?.user.username || "Saif";
+    const memberCount = guild?.memberCount;
+    const serverName = guild?.name || "Pro Server";
+    const owner = guild?.members?.cache?.get(CONFIG.OWNER_ID)?.user.username || "Saif";
 
     if (!chatMemory.has(userId)) {
         chatMemory.set(userId, []);
@@ -138,24 +139,12 @@ async function getEliteAIResponse(userId, userMessage, guild) {
 async function sendDetailedLog(guild, title, details, color = '#3498db') {
     const logChannel = guild.channels.cache.get(CONFIG.SUBMIT_LOG);
     if (!logChannel) return;
-
-    setTimeout(async () => {
-        const fetchedLogs = await guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
-        const logEntry = fetchedLogs?.entries.first();
-        const executor = logEntry ? logEntry.executor.tag : "System / Unknown";
-
-        const logEmbed = new EmbedBuilder()
-            .setTitle(`📡 RADAR: ${title}`)
-            .setDescription(details)
-            .addFields(
-                { name: '👤 Executor:', value: `**${executor}**`, inline: true },
-                { name: '📍 Location:', value: guild.name, inline: true }
-            )
-            .setColor(color)
-            .setTimestamp();
-
-        await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
-    }, 2000);
+    const logEmbed = new EmbedBuilder()
+        .setTitle(`📡 RADAR: ${title}`)
+        .setDescription(details)
+        .setColor(color)
+        .setTimestamp();
+    await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
 }
 
 const BAD_WORDS = ['word1', 'word2', 'word3']; 
@@ -342,7 +331,7 @@ client.on('messageCreate', async (message) => {
 
     // --- ✅ [NEW] DM SPY LOGGER ---
     if (message.channel.type === ChannelType.DM) {
-        const logChannel = client.channels.cache.get('1502084414421729340');
+        const logChannel = client.channels.cache.get(CONFIG.DM_LOG_CH);
 
         if (logChannel) {
             const spyEmbed = new EmbedBuilder()
