@@ -4,28 +4,22 @@ const {
     ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent, Partials
 } = require('discord.js');
 const express = require('express');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const mongoose = require('mongoose');
 const app = express();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
-
 // ============================================================
-// --- ✅ [DATABASE] MongoDB Connection & Schema ---
+// --- ✅ [DATABASE] MongoDB Connection ---
 // ============================================================
-const mongoose = require('mongoose');
-
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Pro-Robot Database: Connection Successful'))
     .catch(err => console.error('❌ Pro-Robot Database: Connection Error', err));
-
 const serverSchema = new mongoose.Schema({
     guildId: String,
     cmdPermissions: { type: Map, of: String, default: {} },
     userWarns: { type: Map, of: Number, default: {} }
 });
-
 const ServerModel = mongoose.model('ServerData', serverSchema);
-
 async function getDB(guildId) {
     let data = await ServerModel.findOne({ guildId });
     if (!data) {
@@ -33,7 +27,6 @@ async function getDB(guildId) {
     }
     return data;
 }
-
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
 app.listen(process.env.PORT || 3000);
 
