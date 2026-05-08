@@ -971,7 +971,7 @@ client.on('guildMemberAdd', async (member) => {
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
         const welcomeEmbed = new EmbedBuilder()
-            .setTitle('## Welcome!')
+            .setTitle('**Welcome!**')
             .setDescription(
                 `[¡}================{!}================[¡}\n` +
                 `- You are now from team PRO! 🥳\n` +
