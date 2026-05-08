@@ -1,5 +1,5 @@
 const { 
-    Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, 
+    Client, GatewayIntentBits, Partials, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
     ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent 
 } = require('discord.js');
@@ -45,7 +45,12 @@ const client = new Client({
         GatewayIntentBits.GuildModeration,
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.DirectMessages,
+        // ✅ [NEW - Part 1] Intents for reaction tracking in DMs & guilds
+        GatewayIntentBits.DirectMessageReactions,
+        GatewayIntentBits.GuildMessageReactions,
     ],
+    // ✅ [NEW - Part 1] Partials required to catch uncached DM reactions
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
     presence: {
         status: 'online',
         activities: [{
@@ -285,7 +290,7 @@ const commands = [
         .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
 
     // ============================================================
-    // ✅ /dm Command — مع إضافة reaction و delete button
+    // ✅ /dm Command — ✅ [NEW - Part 2] Added extra_users & exclude_users
     // ============================================================
     new SlashCommandBuilder()
         .setName('dm')
@@ -300,8 +305,28 @@ const commands = [
         .addStringOption(o => o.setName('caption').setDescription('Caption text for the image').setRequired(false))
         .addStringOption(o => o.setName('color').setDescription('Embed box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'},{name:'Gold',value:'#f1c40f'}).setRequired(false))
         .addIntegerOption(o => o.setName('repeat_interval').setDescription('Repeat DM every X minutes (0 = no repeat, like ads)').setRequired(false))
-        // ✅ [NEW] reaction option
-        .addStringOption(o => o.setName('reaction').setDescription('Emoji to auto-react on the DM message (old & new messages)').setRequired(false)),
+        .addStringOption(o => o.setName('reaction').setDescription('Emoji to auto-react on the DM message').setRequired(false))
+        // ✅ [NEW - Part 2] Extra users: send to multiple specific users (IDs separated by spaces)
+        .addStringOption(o => o.setName('extra_users').setDescription('Extra user IDs separated by space (e.g: 123 456 789)').setRequired(false))
+        // ✅ [NEW - Part 2] Exclude users: skip these IDs when using everyone
+        .addStringOption(o => o.setName('exclude_users').setDescription('User IDs to EXCLUDE from everyone (separated by space)').setRequired(false)),
+
+    // ============================================================
+    // ✅ [NEW - Part 3] /edit Command — Edit any bot DM message
+    // ============================================================
+    new SlashCommandBuilder()
+        .setName('edit')
+        .setDescription('Edit a previously sent bot message (DM or server) using its link')
+        .addStringOption(o => o.setName('message_link').setDescription('The full message link to edit').setRequired(true))
+        .addStringOption(o => o.setName('new_content').setDescription('New text content (leave empty to keep old text)').setRequired(false))
+        .addStringOption(o => o.setName('new_caption').setDescription('New embed title/caption (leave empty to keep old)').setRequired(false))
+        .addStringOption(o => o.setName('new_color').setDescription('New embed color').addChoices(
+            {name:'Blue',value:'#3498db'},
+            {name:'Red',value:'#e74c3c'},
+            {name:'Green',value:'#2ecc71'},
+            {name:'Gold',value:'#f1c40f'}
+        ).setRequired(false))
+        .addAttachmentOption(o => o.setName('new_image').setDescription('Replace the image (embed messages only)').setRequired(false)),
 
 ].map(c => c.toJSON());
 
@@ -335,7 +360,6 @@ function startDMAdsLoop(adName, guildId) {
         if (!guild) return;
 
         const buildPayload = (userId) => {
-            // ✅ [NEW] Delete button — مربوط بـ userId بتاع كل شخص
             const deleteRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`delete_dm_${userId}`)
@@ -367,7 +391,6 @@ function startDMAdsLoop(adName, guildId) {
                 const payload = buildPayload(user.id);
                 const sent = await dm.send(payload);
                 
-                // ✅ [NEW] Auto-react على رسالة DM الجديدة
                 if (ad.reactionEmoji) {
                     await sent.react(ad.reactionEmoji).catch(() => {});
                 }
@@ -516,6 +539,28 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
         `📝 <@${oldMessage.author.id}> edited message in <#${oldMessage.channel.id}>:\n**Old:** ${oldMessage.content}\n**New:** ${newMessage.content}`, '#3498db');
 });
 
+// ============================================================
+// ✅ [NEW - Part 1] Reaction Observer — Logs DM Reactions
+// ============================================================
+client.on('messageReactionAdd', async (reaction, user) => {
+    if (user.bot) return;
+
+    // Fetch partial reaction/message if needed
+    if (reaction.partial) {
+        try { await reaction.fetch(); } catch (e) { return; }
+    }
+
+    // Only log reactions in DM channels
+    if (reaction.message.channel.type === ChannelType.DM) {
+        await logDMActivity(
+            user.id,
+            user.tag || user.username,
+            `✨ User reacted with **${reaction.emoji.name}** to a DM message (ID: ${reaction.message.id})`,
+            'ALERT'
+        );
+    }
+});
+
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); } catch (e) { console.error(e); }
@@ -641,12 +686,18 @@ client.on('messageCreate', async (message) => {
 client.on('interactionCreate', async (interaction) => {
 
     // ============================================================
-    // ✅ [NEW] Delete DM Button — يشتغل على الرسائل القديمة والجديدة
-    // بس الشخص اللي ID بتاعه في الـ customId هو اللي يقدر يحذف
+    // ✅ [UPDATED - Part 1] Delete DM Button — Now logs who deleted
     // ============================================================
     if (interaction.isButton() && interaction.customId.startsWith('delete_dm_')) {
         const targetId = interaction.customId.replace('delete_dm_', '');
         if (interaction.user.id === targetId) {
+            // ✅ [NEW - Part 1] Log the delete action
+            await logDMActivity(
+                interaction.user.id,
+                interaction.user.tag || interaction.user.username,
+                `🗑️ User deleted the DM message using the Delete button (Message ID: ${interaction.message.id})`,
+                'ALERT'
+            );
             await interaction.message.delete().catch(() => {});
         } else {
             await interaction.reply({ content: '❌ You are not authorized to delete this message.', ephemeral: true });
@@ -851,7 +902,88 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // ============================================================
-            // ✅ /dm Command Handler — مع Reaction و Delete Button
+            // ✅ [NEW - Part 3] /edit Command Handler
+            // Edits any existing bot message — works in DMs and server channels
+            // ============================================================
+            if (commandName === 'edit') {
+                const link       = options.getString('message_link');
+                const newText    = options.getString('new_content')  || null;
+                const newCaption = options.getString('new_caption')  || null;
+                const newColor   = options.getString('new_color')    || null;
+                const newImage   = options.getAttachment('new_image') || null;
+
+                // Parse message link: supports both DM links (@me) and guild links
+                // Format: https://discord.com/channels/@me/CHANNEL_ID/MESSAGE_ID
+                //     or: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
+                const parts     = link.split('/');
+                const messageId = parts[parts.length - 1];
+                const channelId = parts[parts.length - 2];
+
+                try {
+                    // Fetch the channel (could be DM or guild channel)
+                    const targetChannel = await client.channels.fetch(channelId).catch(() => null);
+                    if (!targetChannel) {
+                        return await interaction.editReply("❌ Channel not found. Make sure the message link is correct.");
+                    }
+
+                    // Fetch the message inside that channel
+                    const targetMsg = await targetChannel.messages.fetch(messageId).catch(() => null);
+                    if (!targetMsg) {
+                        return await interaction.editReply("❌ Message not found. It might have been deleted.");
+                    }
+
+                    // Only allow editing bot's own messages
+                    if (targetMsg.author.id !== client.user.id) {
+                        return await interaction.editReply("❌ I can only edit my own messages.");
+                    }
+
+                    // Build the updated payload — keep original values if not changed
+                    const editPayload = {};
+
+                    // ── Handle Embed messages ──
+                    if (targetMsg.embeds.length > 0) {
+                        const originalEmbed = targetMsg.embeds[0];
+                        const updatedEmbed  = new EmbedBuilder()
+                            .setColor(newColor  || originalEmbed.color  || '#3498db')
+                            .setDescription(newText    || originalEmbed.description || null)
+                            .setTitle(newCaption || originalEmbed.title || null)
+                            .setTimestamp();
+
+                        // Update image if new one provided, else keep original
+                        if (newImage) {
+                            updatedEmbed.setImage(newImage.url);
+                        } else if (originalEmbed.image?.url) {
+                            updatedEmbed.setImage(originalEmbed.image.url);
+                        }
+
+                        // Keep footer if original had one
+                        if (originalEmbed.footer?.text) {
+                            updatedEmbed.setFooter({ text: originalEmbed.footer.text });
+                        }
+
+                        editPayload.embeds = [updatedEmbed];
+
+                    // ── Handle Normal (non-embed) messages ──
+                    } else {
+                        editPayload.content = newText || targetMsg.content;
+                        // If a new image is provided on a normal message, add it as a file
+                        if (newImage) {
+                            editPayload.files = [newImage.url];
+                        }
+                    }
+
+                    await targetMsg.edit(editPayload);
+                    return await interaction.editReply(`✅ Message edited successfully!\n📍 Channel: <#${channelId}>`);
+
+                } catch (err) {
+                    console.error("❌ /edit error:", err);
+                    return await interaction.editReply("❌ Failed to edit the message. Make sure the link is correct and I have access to that channel.");
+                }
+            }
+
+            // ============================================================
+            // ✅ /dm Command Handler — ✅ [UPDATED - Parts 2 & 4]
+            // Added: extra_users (multiple targets) & exclude_users (for everyone)
             // ============================================================
             if (commandName === 'dm') {
                 const targetUser     = options.getUser('user');
@@ -864,18 +996,23 @@ client.on('interactionCreate', async (interaction) => {
                 const delAfter       = options.getInteger('delete_after');
                 const repeatInterval = options.getInteger('repeat_interval') || 0;
                 const color          = options.getString('color') || '#3498db';
-                // ✅ [NEW] الإيموجي اللي هيتفاعل مع الرسالة — قديمة أو جديدة
                 const reactionEmoji  = options.getString('reaction') || null;
 
+                // ✅ [NEW - Part 2] Parse extra_users & exclude_users
+                const extraUsersInput  = options.getString('extra_users')   || '';
+                const excludeUsersInput = options.getString('exclude_users') || '';
+                const extraUserIds   = extraUsersInput.trim()  ? extraUsersInput.trim().split(/\s+/).filter(Boolean)  : [];
+                const excludeUserIds = excludeUsersInput.trim() ? excludeUsersInput.trim().split(/\s+/).filter(Boolean) : [];
+
                 // Validation
-                if (!targetUser && !sendToAll) {
-                    return await interaction.editReply({ content: '❌ You must either select a **user** or enable the **everyone** option.' });
+                if (!targetUser && !sendToAll && extraUserIds.length === 0) {
+                    return await interaction.editReply({ content: '❌ You must either select a **user**, add **extra_users**, or enable the **everyone** option.' });
                 }
                 if (!msgContent && !image) {
                     return await interaction.editReply({ content: '❌ You must provide a **message** or an **image** to send.' });
                 }
 
-                // ✅ [NEW] Build DM payload — بيشمل زرار Delete مربوط بـ userId
+                // Build DM payload with delete button tied to recipient's userId
                 const buildDMPayload = (userId) => {
                     const deleteRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
@@ -887,8 +1024,8 @@ client.on('interactionCreate', async (interaction) => {
                     if (style === 'embed') {
                         const embed = new EmbedBuilder().setColor(color).setTimestamp();
                         if (msgContent) embed.setDescription(msgContent);
-                        if (caption) embed.setTitle(caption);
-                        if (image) embed.setImage(image.url);
+                        if (caption)    embed.setTitle(caption);
+                        if (image)      embed.setImage(image.url);
                         return { embeds: [embed], components: [deleteRow] };
                     } else {
                         const payload = { 
@@ -904,10 +1041,9 @@ client.on('interactionCreate', async (interaction) => {
                 const sendDMToUser = async (user) => {
                     try {
                         const dmChannel = await user.createDM();
-                        const payload = buildDMPayload(user.id);
-                        const sent = await dmChannel.send(payload);
+                        const payload   = buildDMPayload(user.id);
+                        const sent      = await dmChannel.send(payload);
 
-                        // ✅ [NEW] Auto-react على رسالة DM بعد الإرسال
                         if (reactionEmoji) {
                             await sent.react(reactionEmoji).catch(() => {});
                         }
@@ -926,7 +1062,7 @@ client.on('interactionCreate', async (interaction) => {
                     const adKey = `dmad_${targetUser ? targetUser.id : 'everyone'}_${Date.now()}`;
                     const dmAd = {
                         name: adKey,
-                        targetUserId: sendToAll ? 'everyone' : targetUser.id,
+                        targetUserId: sendToAll ? 'everyone' : (targetUser?.id || extraUserIds[0] || 'everyone'),
                         msgContent,
                         caption,
                         imageUrl: image?.url || null,
@@ -935,7 +1071,6 @@ client.on('interactionCreate', async (interaction) => {
                         deleteAfter: delAfter,
                         interval: repeatInterval,
                         guildId: guild.id,
-                        // ✅ [NEW] حفظ الإيموجي في الـ DM ad
                         reactionEmoji: reactionEmoji || null,
                         timer: null
                     };
@@ -949,31 +1084,68 @@ client.on('interactionCreate', async (interaction) => {
                             .setStyle(ButtonStyle.Danger)
                     );
                     return await interaction.editReply({
-                        content: `✅ **DM Ad Activated!**\n📬 Target: **${sendToAll ? '@everyone' : targetUser.tag}**\n⏱️ Repeating every **${repeatInterval}** min\n🗑️ Auto-delete after **${delAfter}** min${reactionEmoji ? `\n✨ Reaction: ${reactionEmoji}` : ''}`,
+                        content: `✅ **DM Ad Activated!**\n📬 Target: **${sendToAll ? '@everyone' : (targetUser?.tag || extraUserIds.join(', '))}**\n⏱️ Repeating every **${repeatInterval}** min\n🗑️ Auto-delete after **${delAfter}** min${reactionEmoji ? `\n✨ Reaction: ${reactionEmoji}` : ''}`,
                         components: [stopRow]
                     });
                 }
 
                 // --- One-time DM send ---
-                const targetLabel = sendToAll ? '**all server members**' : `<@${targetUser.id}>`;
+                // Collect all target users into one list
+                // ✅ [NEW - Part 2] Merge targetUser + extraUserIds into one send list
+                const allTargetUsers = [];
+
+                if (targetUser) allTargetUsers.push(targetUser);
+
+                // Fetch and add extra users by ID
+                for (const uid of extraUserIds) {
+                    if (uid === targetUser?.id) continue; // avoid duplicate
+                    const extraUser = await client.users.fetch(uid).catch(() => null);
+                    if (extraUser) allTargetUsers.push(extraUser);
+                }
+
+                // Build label for the reply
+                let targetLabel;
+                if (sendToAll) {
+                    const exclusionNote = excludeUserIds.length > 0
+                        ? `\n🚫 Excluding: \`${excludeUserIds.join(', ')}\``
+                        : '';
+                    targetLabel = `**all server members**${exclusionNote}`;
+                } else {
+                    targetLabel = allTargetUsers.map(u => `<@${u.id}>`).join(', ') || '(none)';
+                }
+
                 await interaction.editReply({
                     content: `✅ DM scheduled!\n📬 Target: ${targetLabel}\n⏳ Sending in **${delay}** min\n🗑️ Auto-delete after **${delAfter}** min${reactionEmoji ? `\n✨ Reaction: ${reactionEmoji}` : ''}`
                 });
 
                 setTimeout(async () => {
+                    // ── Everyone mode (with exclude support) ──
+                    // ✅ [NEW - Part 4] excludeUserIds are skipped
                     if (sendToAll) {
                         const members = await guild.members.fetch().catch(() => null);
                         if (!members) return;
                         let successCount = 0;
                         for (const [, member] of members) {
                             if (member.user.bot) continue;
+                            // ✅ Skip excluded users
+                            if (excludeUserIds.includes(member.id)) continue;
                             const ok = await sendDMToUser(member.user);
                             if (ok) successCount++;
                             await new Promise(r => setTimeout(r, 1200));
                         }
                         await interaction.followUp({ content: `✅ DM sent to **${successCount}** members successfully!`, ephemeral: true }).catch(() => {});
+
+                    // ── Specific user(s) mode (targetUser + extra_users) ──
                     } else {
-                        await sendDMToUser(targetUser);
+                        let successCount = 0;
+                        for (const user of allTargetUsers) {
+                            const ok = await sendDMToUser(user);
+                            if (ok) successCount++;
+                            await new Promise(r => setTimeout(r, 800));
+                        }
+                        if (allTargetUsers.length > 1) {
+                            await interaction.followUp({ content: `✅ DM sent to **${successCount}/${allTargetUsers.length}** users successfully!`, ephemeral: true }).catch(() => {});
+                        }
                     }
                 }, delay * 60000);
             }
