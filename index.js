@@ -50,7 +50,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 2.2',
+            state: 'Version: 2.3',
             type: 4
         }]
     }
@@ -65,18 +65,68 @@ const CONFIG = {
     HELP_CH: '1497909981725593712',
     SUBMIT_LOG: '1494367980702797935',
     ROLE_CHANNEL: '1482874761951576228',
-    INFO_CH: '1484641160394702958'
+    INFO_CH: '1484641160394702958',
+    DM_LOG_CH: '1502084414421729340'        // ✅ [NEW] DM Log Channel
 };
 
 const adsStorage = new Map();
 const warnStorage = new Map();
+const dmAdsStorage = new Map();             // ✅ [NEW] DM Ads Storage
 
 const pendingUpdates = new Map(); 
 const ADMIN_PASSWORD = "Pro@Robot510";
 let extraServerInfo = ""; 
 
 // ============================================================
-// --- ✅ [1] AI Global Brain & Memory System ---
+// --- ✅ [NEW] DM Logger - Logs All Bot DM Activity ---
+// ============================================================
+async function logDMActivity(userId, username, content, direction = 'IN') {
+    const logCh = client.channels.cache.get(CONFIG.DM_LOG_CH);
+    if (!logCh) return;
+
+    const arrow = direction === 'IN' ? '📨 DM Received (User → Bot)' : '📤 DM Sent (Bot → User)';
+    const color = direction === 'IN' ? '#3498db' : '#2ecc71';
+
+    const logEmbed = new EmbedBuilder()
+        .setTitle(`${arrow}`)
+        .addFields(
+            { name: '👤 User', value: `<@${userId}> \`(${username})\``, inline: true },
+            { name: '🆔 User ID', value: `\`${userId}\``, inline: true }
+        )
+        .setDescription(`**📝 Message Content:**\n\`\`\`\n${content || '[Empty / Image Only]'}\n\`\`\``)
+        .setColor(color)
+        .setTimestamp()
+        .setFooter({ text: 'Pro Robot DM Intelligence System' });
+
+    await logCh.send({ embeds: [logEmbed] }).catch(() => {});
+}
+
+// ============================================================
+// --- ✅ [NEW] Moderation DM Notifier ---
+// ============================================================
+async function sendModDM(user, action, reason, guildName) {
+    try {
+        const dmChannel = await user.createDM();
+        const modEmbed = new EmbedBuilder()
+            .setTitle(`⚠️ Action Taken — ${guildName}`)
+            .setDescription(`You have received a moderation action in **${guildName}**.`)
+            .addFields(
+                { name: '🔨 Action', value: `**${action}**`, inline: true },
+                { name: '📝 Reason', value: reason || 'No reason provided.', inline: true }
+            )
+            .setColor('#e74c3c')
+            .setTimestamp()
+            .setFooter({ text: 'Pro Robot Security System • Pro Server for MC' });
+
+        await dmChannel.send({ embeds: [modEmbed] });
+        await logDMActivity(user.id, user.tag, `[🔨 MOD NOTIFICATION] Action: ${action} | Reason: ${reason}`, 'OUT');
+    } catch (err) {
+        console.error(`❌ Failed to send mod DM to ${user.tag}:`, err);
+    }
+}
+
+// ============================================================
+// --- ✅ [1] AI Global Brain — Upgraded to Gemini ---
 // ============================================================
 const chatMemory = new Map();
 
@@ -90,9 +140,7 @@ async function getEliteAIResponse(userId, userMessage, guild) {
     }
     let memory = chatMemory.get(userId);
 
-    const systemInstruction = {
-        role: "system",
-        content: `You are "Pro Robot", the autonomous Human-like Executive Manager of the Discord server "${serverName}".
+    const systemPrompt = `You are "Pro Robot", the autonomous Human-like Executive Manager of the Discord server "${serverName}".
         - You are highly intelligent, observant, and act as if you own the server alongside ${owner}.
         - Current Server Status: ${memberCount} members are currently under your supervision.
         - Owner: ${owner} (<@${CONFIG.OWNER_ID}>).
@@ -101,34 +149,34 @@ async function getEliteAIResponse(userId, userMessage, guild) {
         - LANGUAGES: You are a polyglot. You MUST understand and respond fluently in ALL world languages (Arabic, English, etc.) based on the user's language.
         - MEMORY: You remember previous parts of this conversation. Use the provided history to give continuous, smart answers.
         - TONE: Professional, helpful, and authoritative.
-        - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`
-    };
+        - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`;
 
-    memory.push({ role: "user", content: userMessage });
+    // ✅ Gemini uses "user" / "model" roles
+    memory.push({ role: "user", parts: [{ text: userMessage }] });
 
     if (memory.length > 10) {
         memory.splice(0, 2); 
     }
 
     try {
-        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
-            },
-            body: JSON.stringify({
-                model: "mistral-medium",
-                messages: [systemInstruction, ...memory],
-                temperature: 0.7,
-                max_tokens: 500
-            })
-        });
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_KEY}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    contents: memory,
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 500 }
+                })
+            }
+        );
 
         const data = await response.json();
-        const aiReply = data.choices?.[0]?.message?.content || `I am currently analyzing server data. Please repeat your question. <@${CONFIG.OWNER_ID}>`;
+        const aiReply = data.candidates?.[0]?.content?.parts?.[0]?.text 
+            || `I am currently analyzing server data. Please repeat your question. <@${CONFIG.OWNER_ID}>`;
 
-        memory.push({ role: "assistant", content: aiReply });
+        memory.push({ role: "model", parts: [{ text: aiReply }] });
         chatMemory.set(userId, memory);
 
         return aiReply;
@@ -181,13 +229,11 @@ const commands = [
     new SlashCommandBuilder().setName('vote').setDescription('Make a quick vote').addStringOption(o => o.setName('question').setDescription('Vote question').setRequired(true)),
     new SlashCommandBuilder().setName('role').setDescription('Select a member and a rank').addUserOption(o => o.setName('user').setDescription('The member to give the rank to').setRequired(true)).addRoleOption(o => o.setName('rank').setDescription('The rank to give').setRequired(true)),
     new SlashCommandBuilder().setName('slash_control').setDescription('Restrict a command to a specific role').addStringOption(o => o.setName('command_name').setDescription('The command to restrict').setRequired(true)).addRoleOption(o => o.setName('allowed_role').setDescription('The role allowed to use this command').setRequired(true)),
-    // ✅ Reaction Command
     new SlashCommandBuilder()
         .setName('reaction')
         .setDescription('Add a reaction to a specific message using its link')
         .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
         .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true)),
-    // ✅ Picture Command
     new SlashCommandBuilder()
         .setName('picture')
         .setDescription('Send pictures with auto-send and auto-delete timers')
@@ -196,25 +242,22 @@ const commands = [
         .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes)').setRequired(true))
         .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true))
         .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
-    // ✅ [NEW] DM Command
+
+    // ✅ [NEW] /dm Command — Full DM Control Panel
     new SlashCommandBuilder()
         .setName('dm')
-        .setDescription('Advanced Direct Message Control')
-        .addStringOption(o => o.setName('scope').setDescription('Who will receive this?').setRequired(true)
-            .addChoices(
-                {name: 'Specific User', value: 'user'},
-                {name: 'Everyone (Broadcast)', value: 'all'}
-            ))
-        .addUserOption(o => o.setName('target').setDescription('Select user (if scope is user)'))
-        .addStringOption(o => o.setName('action').setDescription('Action type').setRequired(true)
-            .addChoices(
-                {name: 'Send Message', value: 'msg'},
-                {name: 'Send Photo', value: 'photo'}
-            ))
-        .addStringOption(o => o.setName('content').setDescription('The message or image link').setRequired(true))
-        .addIntegerOption(o => o.setName('delay').setDescription('Delay before sending (minutes)'))
-        .addIntegerOption(o => o.setName('delete_after').setDescription('Delete after (minutes)'))
-        .addStringOption(o => o.setName('style').setDescription('Message style').addChoices({name:'Box/Embed',value:'embed'},{name:'Normal Text',value:'normal'})),
+        .setDescription('📬 Full DM control panel — send messages or images to users via DM')
+        .addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'}))
+        .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes, 0 = instant)').setRequired(true))
+        .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete after X minutes (0 = never)').setRequired(true))
+        .addUserOption(o => o.setName('user').setDescription('Target user (leave empty + enable everyone to send to all)').setRequired(false))
+        .addBooleanOption(o => o.setName('everyone').setDescription('Send to ALL server members').setRequired(false))
+        .addStringOption(o => o.setName('message').setDescription('Message text content').setRequired(false))
+        .addAttachmentOption(o => o.setName('image').setDescription('Image to send in DM').setRequired(false))
+        .addStringOption(o => o.setName('caption').setDescription('Caption text for the image').setRequired(false))
+        .addStringOption(o => o.setName('color').setDescription('Embed box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'},{name:'Gold',value:'#f1c40f'}).setRequired(false))
+        .addIntegerOption(o => o.setName('repeat_interval').setDescription('Repeat DM every X minutes (0 = no repeat, like ads)').setRequired(false)),
+
 ].map(c => c.toJSON());
 
 function startAdLoop(adName, guildId) {
@@ -236,13 +279,68 @@ function startAdLoop(adName, guildId) {
     }, ad.interval * 60000);
 }
 
+// ✅ [NEW] DM Ads Loop — like startAdLoop but for private messages
+function startDMAdsLoop(adName, guildId) {
+    const ad = dmAdsStorage.get(adName);
+    if (!ad) return;
+    if (ad.timer) clearInterval(ad.timer);
+
+    ad.timer = setInterval(async () => {
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) return;
+
+        const buildPayload = (color) => {
+            if (ad.style === 'embed') {
+                const embed = new EmbedBuilder()
+                    .setColor(color || '#3498db')
+                    .setTimestamp();
+                if (ad.msgContent) embed.setDescription(ad.msgContent);
+                if (ad.caption) embed.setTitle(ad.caption);
+                if (ad.imageUrl) embed.setImage(ad.imageUrl);
+                return { embeds: [embed] };
+            } else {
+                const payload = { content: ad.msgContent || ad.caption || ' ' };
+                if (ad.imageUrl) payload.files = [ad.imageUrl];
+                return payload;
+            }
+        };
+
+        const sendOne = async (user) => {
+            try {
+                const dm = await user.createDM();
+                const payload = buildPayload(ad.color);
+                const sent = await dm.send(payload);
+                await logDMActivity(user.id, user.tag, ad.msgContent || '[Image]', 'OUT');
+                if (ad.deleteAfter > 0) setTimeout(() => sent.delete().catch(() => {}), ad.deleteAfter * 60000);
+            } catch (e) {
+                console.error(`❌ DM Ad failed for ${user.tag}:`, e);
+            }
+        };
+
+        if (ad.targetUserId === 'everyone') {
+            const members = await guild.members.fetch().catch(() => null);
+            if (!members) return;
+            for (const [, member] of members) {
+                if (!member.user.bot) {
+                    await sendOne(member.user);
+                    await new Promise(r => setTimeout(r, 1200));
+                }
+            }
+        } else {
+            const user = await client.users.fetch(ad.targetUserId).catch(() => null);
+            if (user) await sendOne(user);
+        }
+
+    }, ad.interval * 60000);
+}
+
 // --- Monitoring Events ---
 client.on('guildUpdate', (oldGuild, newGuild) => {
     if (oldGuild.name !== newGuild.name) sendDetailedLog(newGuild, 'Server Name Changed', `From **${oldGuild.name}** to **${newGuild.name}**`, '#e67e22');
     if (oldGuild.icon !== newGuild.icon) sendDetailedLog(newGuild, 'Server Icon Changed', `Server avatar has been updated.`, '#9b59b6');
 });
 
-// ✅ guildMemberUpdate - Boost System + Original Code
+// ✅ Boost System + Original Code
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
     // --- [SERVER BOOST SYSTEM] ---
@@ -264,11 +362,32 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
             if (boostMsg) await boostMsg.react('🎉').catch(() => {});
         }
 
+        // ✅ [NEW] DM the booster
+        await sendModDM(
+            newMember.user,
+            '💎 Server Boost Reward',
+            `Thank you for boosting **${newMember.guild.name}**! Your boost role has been assigned. We truly appreciate your support! 🎉`,
+            newMember.guild.name
+        );
+
         sendDetailedLog(
             newMember.guild, 
             'Server Boosted! 💎', 
             `User: <@${newMember.id}> has just boosted the server.\nStatus: **Role Assigned Successfully**`, 
             '#ffff55' 
+        );
+    }
+
+    // --- [TIMEOUT DETECTION] — DM notify on mute ---
+    const wasTimedOut = !oldMember.communicationDisabledUntil && newMember.communicationDisabledUntil;
+    if (wasTimedOut) {
+        const until = newMember.communicationDisabledUntil;
+        const duration = until ? `until <t:${Math.floor(until.getTime() / 1000)}:R>` : 'temporarily';
+        await sendModDM(
+            newMember.user,
+            '🤐 Timeout (Muted)',
+            `You have been muted in **${newMember.guild.name}** ${duration}.\nReason: Violation of server rules.`,
+            newMember.guild.name
         );
     }
 
@@ -286,7 +405,17 @@ client.on('channelCreate', (ch) => sendDetailedLog(ch.guild, 'Channel Created', 
 client.on('channelDelete', (ch) => sendDetailedLog(ch.guild, 'Channel Deleted', `Name: **${ch.name}**`, '#e74c3c'));
 client.on('roleCreate', (role) => sendDetailedLog(role.guild, 'Role Created', `Role: **${role.name}**`, '#2ecc71'));
 client.on('roleDelete', (role) => sendDetailedLog(role.guild, 'Role Deleted', `Role: **${role.name}**`, '#e74c3c'));
-client.on('guildBanAdd', (ban) => sendDetailedLog(ban.guild, 'Member Banned', `User: **${ban.user.tag}** was banned.`, '#c0392b'));
+
+// ✅ [UPDATED] Ban — DM notify before logging
+client.on('guildBanAdd', async (ban) => {
+    await sendModDM(
+        ban.user,
+        '🚫 Permanent Ban',
+        `You have been permanently banned from **${ban.guild.name}**.\nReason: ${ban.reason || 'Violation of server rules.'}`,
+        ban.guild.name
+    );
+    sendDetailedLog(ban.guild, 'Member Banned', `User: **${ban.user.tag}** was banned.`, '#c0392b');
+});
 
 // ============================================================
 // --- ✅ [3] The Observer System (Voice & Message Activity) ---
@@ -339,32 +468,14 @@ client.on('ready', async () => {
 });
 
 // ============================================================
-// --- Main messageCreate (Automod + Anti-Link + AI Brain + DM Spy) ---
+// --- Main messageCreate (Automod + Anti-Link + AI Brain + DM Logger) ---
 // ============================================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // --- ✅ [NEW] DM SPY LOGGER ---
+    // ✅ [NEW] Log incoming DMs to the bot
     if (message.channel.type === ChannelType.DM) {
-        const logChannel = client.channels.cache.get('1502084414421729340');
-
-        if (logChannel) {
-            const spyEmbed = new EmbedBuilder()
-                .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
-                .setTitle('📩 New Message in DM')
-                .addFields(
-                    { name: '👤 From:', value: `<@${message.author.id}>` },
-                    { name: '📝 Message:', value: message.content || "*(Attachment Only)*" }
-                )
-                .setColor('#ffff55')
-                .setTimestamp();
-            
-            if (message.attachments.size > 0) {
-                spyEmbed.setImage(message.attachments.first().url);
-            }
-
-            logChannel.send({ embeds: [spyEmbed] });
-        }
+        await logDMActivity(message.author.id, message.author.tag, message.content, 'IN');
         return;
     }
 
@@ -387,6 +498,9 @@ client.on('messageCreate', async (message) => {
             warnStorage.set(message.author.id, warns);
 
             if (warns === 1) {
+                // ✅ [NEW] DM warning
+                await sendModDM(message.member.user, '⚠️ Warning — Unauthorized Link', 'You sent an unauthorized link or advertisement. This is your first warning. Next violation will result in a timeout.', message.guild.name);
+
                 const warnEmbed = new EmbedBuilder()
                     .setTitle('🚫 Security Violation')
                     .setDescription(`Stop right there <@${message.author.id}>! Advertising or sending unauthorized links is strictly forbidden.`)
@@ -397,9 +511,13 @@ client.on('messageCreate', async (message) => {
 
             } else if (warns === 2) {
                 await message.member.timeout(60 * 60 * 1000, 'Sending links/Advertising').catch(() => {});
+                // ✅ [NEW] DM mute notification
+                await sendModDM(message.member.user, '🤐 Timeout — 1 Hour', 'You have been muted for 1 hour for repeatedly sending unauthorized links or advertisements.', message.guild.name);
                 message.channel.send(`🤐 <@${message.author.id}> has been muted for 1 hour for repeated link violations.`);
 
             } else {
+                // ✅ [NEW] DM before ban
+                await sendModDM(message.member.user, '🚫 Permanent Ban', 'You have been permanently banned for persistent advertising and security breaches.', message.guild.name);
                 await message.member.ban({ reason: 'Persistent Advertising & Security Breach' }).catch(() => {});
                 message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for extreme advertising.`);
                 sendDetailedLog(message.guild, 'User Banned (Anti-Link)', `User: **${message.author.tag}** was banned for trying to bypass link security.`, '#c0392b');
@@ -415,9 +533,13 @@ client.on('messageCreate', async (message) => {
         warnStorage.set(message.author.id, count);
         if (count === 1) {
             await message.member.timeout(5 * 60 * 1000, 'Swearing in server').catch(() => {});
+            // ✅ [NEW] DM mute notification
+            await sendModDM(message.member.user, '🤐 Timeout — 5 Minutes', 'You have been muted for 5 minutes for using inappropriate language in the server.', message.guild.name);
             const m = await message.channel.send(`⚠️ <@${message.author.id}>, you have been muted for 5 minutes for swearing.`);
             setTimeout(() => m.delete().catch(() => {}), 10000);
         } else {
+            // ✅ [NEW] DM before ban
+            await sendModDM(message.member.user, '🚫 Permanent Ban', 'You have been permanently banned for repeated use of inappropriate language.', message.guild.name);
             await message.member.ban({ reason: 'Repeated severe swearing' }).catch(() => {});
             message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for repeated swearing.`);
         }
@@ -482,11 +604,15 @@ client.on('interactionCreate', async (interaction) => {
         const rank = interaction.fields.getTextInputValue('rank_type');
         const logCh = client.channels.cache.get(CONFIG.SUBMIT_LOG);
         if (logCh) await logCh.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
+        // ✅ [NEW] Log modal submit to DM log
+        await logDMActivity(interaction.user.id, interaction.user.tag, `[📋 RANK MODAL SUBMIT] Xbox: ${xbox} | Rank: ${rank}`, 'IN');
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'admin_pass_modal') {
         const enteredPass = interaction.fields.getTextInputValue('admin_password_input');
+        // ✅ [NEW] Log password attempt to DM log
+        await logDMActivity(interaction.user.id, interaction.user.tag, `[🔐 ADMIN MODAL ATTEMPT] Password entered: ${enteredPass === ADMIN_PASSWORD ? '✅ Correct' : '❌ Wrong'}`, 'IN');
         if (enteredPass === ADMIN_PASSWORD) {
             extraServerInfo = pendingUpdates.get(interaction.user.id) || "Updated via AI";
             pendingUpdates.delete(interaction.user.id);
@@ -531,6 +657,8 @@ client.on('interactionCreate', async (interaction) => {
                 await targetUser.roles.add(targetRole).catch(e => console.error(e));
                 const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
                 if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
+                // ✅ [NEW] DM the user about their new role
+                await sendModDM(targetUser.user, `✨ New Role — ${targetRole.name}`, `You have been given the **${targetRole.name}** role by <@${interaction.user.id}>!`, guild.name);
                 return await interaction.editReply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.` });
             }
 
@@ -603,7 +731,6 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            // ✅ Reaction Command Handler
             if (commandName === 'reaction') {
                 const link = options.getString('link');
                 const emoji = options.getString('emoji');
@@ -628,7 +755,6 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
-            // ✅ Picture Command Handler
             if (commandName === 'picture') {
                 const image = options.getAttachment('image');
                 const style = options.getString('style');
@@ -657,46 +783,112 @@ client.on('interactionCreate', async (interaction) => {
                 }, delay * 60000);
             }
 
-            // ✅ [NEW] DM Command Handler
+            // ============================================================
+            // --- ✅ [NEW] /dm Command Handler — Full DM Control Panel ---
+            // ============================================================
             if (commandName === 'dm') {
-                const scope = options.getString('scope');
-                const targetUser = options.getUser('target');
-                const action = options.getString('action');
-                const content = options.getString('content');
-                const delay = options.getInteger('delay') || 0;
-                const delTime = options.getInteger('delete_after') || 0;
-                const style = options.getString('style') || 'normal';
+                const targetUser    = options.getUser('user');
+                const sendToAll     = options.getBoolean('everyone') || false;
+                const msgContent    = options.getString('message') || '';
+                const caption       = options.getString('caption') || '';
+                const image         = options.getAttachment('image');
+                const style         = options.getString('style');
+                const delay         = options.getInteger('delay_send');
+                const delAfter      = options.getInteger('delete_after');
+                const repeatInterval = options.getInteger('repeat_interval') || 0;
+                const color         = options.getString('color') || '#3498db';
 
-                if (scope === 'user' && !targetUser) return interaction.editReply({ content: "❌ Target user is missing!" });
+                // Validation
+                if (!targetUser && !sendToAll) {
+                    return await interaction.editReply({ content: '❌ You must either select a **user** or enable the **everyone** option.' });
+                }
+                if (!msgContent && !image) {
+                    return await interaction.editReply({ content: '❌ You must provide a **message** or an **image** to send.' });
+                }
 
-                await interaction.editReply({ content: `⏳ Task scheduled for **${scope}**. Executing in ${delay} min.` });
-
-                const deliver = async (user) => {
-                    try {
-                        let sent;
-                        if (action === 'msg') {
-                            if (style === 'embed') {
-                                const embed = new EmbedBuilder().setTitle('Official Update').setDescription(content).setColor('#2ecc71');
-                                sent = await user.send({ embeds: [embed] });
-                            } else {
-                                sent = await user.send(content);
-                            }
-                        } else if (action === 'photo') {
-                            sent = await user.send({ files: [content] });
-                        }
-
-                        if (sent && delTime > 0) {
-                            setTimeout(() => sent.delete().catch(() => {}), delTime * 60000);
-                        }
-                    } catch (e) { console.log(`Cannot DM: ${user.id}`); }
+                // Build the DM payload based on style
+                const buildDMPayload = () => {
+                    if (style === 'embed') {
+                        const embed = new EmbedBuilder().setColor(color).setTimestamp();
+                        if (msgContent) embed.setDescription(msgContent);
+                        if (caption) embed.setTitle(caption);
+                        if (image) embed.setImage(image.url);
+                        return { embeds: [embed] };
+                    } else {
+                        const payload = { content: [msgContent, caption].filter(Boolean).join('\n') || ' ' };
+                        if (image) payload.files = [image.url];
+                        return payload;
+                    }
                 };
 
+                // Helper: send DM to a single user
+                const sendDMToUser = async (user) => {
+                    try {
+                        const dmChannel = await user.createDM();
+                        const payload = buildDMPayload();
+                        const sent = await dmChannel.send(payload);
+                        // Log to DM log channel
+                        await logDMActivity(user.id, user.tag, msgContent || caption || '[📷 Image Only]', 'OUT');
+                        // Auto-delete
+                        if (delAfter > 0) setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
+                        return true;
+                    } catch (err) {
+                        console.error(`❌ /dm failed for ${user.tag}:`, err);
+                        return false;
+                    }
+                };
+
+                // --- Repeating DM (like ads system) ---
+                if (repeatInterval > 0) {
+                    const adKey = `dmad_${targetUser ? targetUser.id : 'everyone'}_${Date.now()}`;
+                    const dmAd = {
+                        name: adKey,
+                        targetUserId: sendToAll ? 'everyone' : targetUser.id,
+                        msgContent,
+                        caption,
+                        imageUrl: image?.url || null,
+                        style,
+                        color,
+                        deleteAfter: delAfter,
+                        interval: repeatInterval,
+                        guildId: guild.id,
+                        timer: null
+                    };
+                    dmAdsStorage.set(adKey, dmAd);
+                    startDMAdsLoop(adKey, guild.id);
+
+                    const stopRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`stop_dmad_${adKey}`)
+                            .setLabel('Stop DM Ad 🗑️')
+                            .setStyle(ButtonStyle.Danger)
+                    );
+                    return await interaction.editReply({
+                        content: `✅ **DM Ad Activated!**\n📬 Target: **${sendToAll ? '@everyone' : targetUser.tag}**\n⏱️ Repeating every **${repeatInterval}** min\n🗑️ Auto-delete after **${delAfter}** min`,
+                        components: [stopRow]
+                    });
+                }
+
+                // --- One-time DM send ---
+                const targetLabel = sendToAll ? '**all server members**' : `<@${targetUser.id}>`;
+                await interaction.editReply({
+                    content: `✅ DM scheduled!\n📬 Target: ${targetLabel}\n⏳ Sending in **${delay}** min\n🗑️ Auto-delete after **${delAfter}** min`
+                });
+
                 setTimeout(async () => {
-                    if (scope === 'user') {
-                        await deliver(targetUser);
+                    if (sendToAll) {
+                        const members = await guild.members.fetch().catch(() => null);
+                        if (!members) return;
+                        let successCount = 0;
+                        for (const [, member] of members) {
+                            if (member.user.bot) continue;
+                            const ok = await sendDMToUser(member.user);
+                            if (ok) successCount++;
+                            await new Promise(r => setTimeout(r, 1200)); // Rate limit safety
+                        }
+                        await interaction.followUp({ content: `✅ DM sent to **${successCount}** members successfully!`, ephemeral: true }).catch(() => {});
                     } else {
-                        const members = await interaction.guild.members.fetch();
-                        members.forEach(m => { if (!m.user.bot) deliver(m.user); });
+                        await sendDMToUser(targetUser);
                     }
                 }, delay * 60000);
             }
@@ -711,6 +903,18 @@ client.on('interactionCreate', async (interaction) => {
         const ad = adsStorage.get(name);
         if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ Ad **${name}** removed.`, components: [], ephemeral: true }); }
     }
+    // ✅ [NEW] Stop DM Ad Button
+    else if (interaction.isButton() && interaction.customId.startsWith('stop_dmad_')) {
+        const name = interaction.customId.replace('stop_dmad_', '');
+        const dmAd = dmAdsStorage.get(name);
+        if (dmAd) {
+            if (dmAd.timer) clearInterval(dmAd.timer);
+            dmAdsStorage.delete(name);
+            await interaction.update({ content: `🗑️ DM Ad stopped and removed.`, components: [] });
+        } else {
+            await interaction.reply({ content: '❌ DM Ad not found or already stopped.', ephemeral: true });
+        }
+    }
 });
 
 client.on('guildMemberAdd', async (member) => {
@@ -719,28 +923,45 @@ client.on('guildMemberAdd', async (member) => {
     await member.roles.add(rolesToAdd).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        const welcomeEmbed = new EmbedBuilder().setDescription(`## 𝗪𝗲𝗹𝗰𝗼𝗺𝗲!\n[¡}================{!}================[¡}\n- You are now from team PRO! 🥳\n- Join us and you will be enjoying! 🎉\n- Chat with us and go to read rules server.\n[]--------------------!--------------------[]\n→ <#1482874761951576228> | <#1482901664951304222>\n[¡}================{!}================[¡}\nThank you! ❤️`).setColor('#3498db');
+        // ✅ [UPDATED] Beautiful & stylish welcome message
+        const welcomeEmbed = new EmbedBuilder()
+            .setTitle('🌟 Welcome to Pro Server for MC!')
+            .setDescription(
+                `> 🎉 **Hey <@${member.id}>, you made it!**\n\n` +
+                `╔══════════════════════════╗\n` +
+                `║  🏆  **PRO SERVER FOR MC**  🏆  ║\n` +
+                `╚══════════════════════════╝\n\n` +
+                `🎮 **You are now officially part of Team PRO!**\n` +
+                `✨ Get ready for an amazing experience!\n` +
+                `💬 Chat with us and enjoy your time here.\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                `📌 **Important Links:**\n` +
+                `→ 📜 Rules: <#1482874761951576228>\n` +
+                `→ 🎭 Roles: <#1482901664951304222>\n` +
+                `→ 🤖 AI Help: <#${CONFIG.HELP_CH}>\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `👑 Owner: <@${CONFIG.OWNER_ID}>\n` +
+                `🤖 Managed by: <@${CONFIG.BOT_ID}>\n` +
+                `👥 You are member **#${member.guild.memberCount}**\n\n` +
+                `💫 *We're so happy to have you here!* ❤️`
+            )
+            .setColor('#3498db')
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
+            .setImage('https://i.imgur.com/5JhpFnx.gif')
+            .setFooter({ text: `Pro Server for MC • ${new Date().toLocaleDateString('en-GB')}` })
+            .setTimestamp();
+
         const m = await welcomeCh.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
 
-    // --- ✅ [NEW] AI WELCOME DM SYSTEM ---
-    try {
-        const prompt = `Create a short, cool, and professional welcome message in English for ${member.user.username} who joined our Minecraft server "Pro Server". Mention we are glad to have them and use emojis.`;
-        const aiResponse = await model.generateContent(prompt);
-        const welcomeText = aiResponse.response.text();
-
-        const embed = new EmbedBuilder()
-            .setTitle(`Welcome to Pro Server! 👑`)
-            .setDescription(welcomeText)
-            .setColor('#3498db')
-            .setThumbnail(member.guild.iconURL())
-            .setFooter({ text: 'AI-Powered System' });
-        
-        await member.send({ embeds: [embed] });
-    } catch (e) { 
-        console.log(`❌ DM closed for ${member.user.tag}`); 
-    }
+    // ✅ [NEW] Send a personal welcome DM to new member
+    await sendModDM(
+        member.user,
+        '🎉 Welcome to Pro Server for MC!',
+        `Hey **${member.user.username}**! 👋\n\nYou have successfully joined **Pro Server for MC**. We're thrilled to have you!\n\n📜 Make sure to read the rules and enjoy your time with us. If you need any help, ask our AI in the help channel!\n\n— *Pro Robot* 🤖`,
+        member.guild.name
+    );
 
     updateLiveInfo(member.guild);
 });
