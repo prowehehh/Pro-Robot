@@ -964,12 +964,8 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 });
-
 client.on('guildMemberAdd', async (member) => {
-    // 1. تسجيل الدخول في الرادار
     sendDetailedLog(member.guild, 'New Member Joined', `Member: <@${member.id}> has joined the server.`, '#2ecc71');
-
-    // 2. إعطاء الرتب التلقائية
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
     await member.roles.add(rolesToAdd).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
@@ -986,12 +982,11 @@ client.on('guildMemberAdd', async (member) => {
                 `[¡}================{!}================[¡}\n` +
                 `Thank you! ❤️`)
             .setColor('#3498db')
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
             .setTimestamp();
         const m = await welcomeCh.send({ 
             content: `<@${member.id}>`, 
             embeds: [welcomeEmbed] 
-        }).catch(() => {});
+        }).catch(() => {});    
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
     await sendModDM(
@@ -1006,7 +1001,6 @@ client.on('guildMemberRemove', async (member) => {
     sendDetailedLog(member.guild, 'Member Left', `User: **${member.user.tag}** left the server.`, '#e74c3c');
     updateLiveInfo(member.guild);
 });
-
 async function updateLiveInfo(guild) {
     if (!guild) guild = client.guilds.cache.first();
     const infoCh = client.channels.cache.get(CONFIG.INFO_CH);
