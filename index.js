@@ -289,24 +289,25 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try { 
-        // ✅ تسجيل فوري على السيرفر - يظهر الأوامر على طول
         await rest.put(
             Routes.applicationGuildCommands(client.user.id, CONFIG.GUILD_ID), 
             { body: commands }
         );
-        console.log(`✅ ${commands.length} Commands registered instantly on guild!`);
-
-        // ✅ تسجيل global عشان تشتغل على أي سيرفر
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log(`✅ ${commands.length} Commands registered globally!`);
-
+        console.log(`✅ Commands registered instantly!`);
     } catch (e) { 
-        console.error("❌ Command Registration Error:", e.message); 
+        console.error("❌ Registration Error:", e.message); 
     }
+    
     console.log(`✅ Pro Robot Online: ${client.user.tag}`);
-    updateLiveInfo();
+    
+    // التعديل هنا:
+    const guild = client.guilds.cache.get(CONFIG.GUILD_ID);
+    if (guild) {
+        updateLiveInfo(guild);
+    } else {
+        console.log("⚠️ Guild not found in cache yet, skipping live update.");
+    }
 });
-
 // ============================================================
 // --- Main messageCreate (Automod + Anti-Link + AI Brain + DM Spy) ---
 // ============================================================
@@ -412,7 +413,7 @@ client.on('messageCreate', async (message) => {
             const text = await getEliteAIResponse(message.author.id, cleanContent || message.content, message.guild);
             
             if (text) {
-                const isUpdateTask = cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف");
+                const isUpdateTask = cleanContent.includes("Edit") || cleanContent.includes("update") || cleanContent.includes("ضيف");
 
                 if (isUpdateTask) {
                     pendingUpdates.set(message.author.id, cleanContent);
