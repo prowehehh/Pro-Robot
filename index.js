@@ -51,7 +51,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 3.5.0',
+            state: 'Version: 2.2',
             type: 4
         }]
     }
@@ -83,56 +83,50 @@ let extraServerInfo = "";
 const chatMemory = new Map();
 
 async function getEliteAIResponse(userId, userMessage, guild) {
-    const memberCount = guild?.memberCount;
     const serverName = guild?.name || "Pro Server";
-    const owner = guild?.members?.cache?.get(CONFIG.OWNER_ID)?.user.username || "Saif";
+    const owner = "Saif"; 
 
-    if (!chatMemory.has(userId)) {
-        chatMemory.set(userId, []);
-    }
+    if (!chatMemory.has(userId)) chatMemory.set(userId, []);
     let memory = chatMemory.get(userId);
 
     const systemInstruction = {
         role: "system",
-        content: `You are "Pro Robot", the autonomous Executive Manager of "${serverName}".
-        - Owner: ${owner}.
-        - You handle DMs, Mentions, and Help channels.
-        - Respond fluently in the language the user is speaking (Arabic or English).
-        - Be professional, cool, and act as a protector of the server.`
+        content: `You are "Pro Robot", Executive Manager of "${serverName}". Owner: ${owner}. 
+        Respond fluently in the user's language (Arabic or English). Be professional and cool.`
     };
 
     memory.push({ role: "user", content: userMessage });
-
-    if (memory.length > 10) {
-        memory.splice(0, 2); 
-    }
+    if (memory.length > 10) memory.splice(0, 2);
 
     try {
         const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': `Bearer ${process.env.MISTRAL_KEY}` 
             },
-            body: JSON.stringify({
-                model: "mistral-medium",
-                messages: [systemInstruction, ...memory],
-                temperature: 0.7,
-                max_tokens: 500
+            body: JSON.stringify({ 
+                model: "mistral-small-latest",
+                messages: [systemInstruction, ...memory], 
+                temperature: 0.7 
             })
         });
 
-        const data = await response.json();
-        const aiReply = data.choices?.[0]?.message?.content || `I am currently analyzing server data. Please repeat your question. <@${CONFIG.OWNER_ID}>`;
+        if (!response.ok) {
+            console.log(`AI Error Status: ${response.status}`);
+            return "⚠️ System rebooting... The AI core is currently busy. Please try again in a moment!";
+        }
 
+        const data = await response.json();
+        const aiReply = data.choices?.[0]?.message?.content || "Analyzing data... please try again.";
+        
         memory.push({ role: "assistant", content: aiReply });
         chatMemory.set(userId, memory);
-
         return aiReply;
 
-    } catch (error) {
-        console.error("AI System Error:", error);
-        return `My connection to the main frame was interrupted. Try again! <@${CONFIG.OWNER_ID}>`;
+    } catch (e) { 
+        console.error("Critical AI Error:", e);
+        return "📡 Connection lost with the mainframe. Check my API status!"; 
     }
 }
 
@@ -318,8 +312,17 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
 
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    try { await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); } catch (e) { console.error(e); }
-    console.log(`Logged in as ${client.user.tag}`);
+    try { 
+        // تسجيل الأوامر على السيرفر مباشرة عشان تظهر فوراً
+        const guild = client.guilds.cache.first();
+        if (guild) {
+            await rest.put(Routes.applicationGuildCommands(client.user.id, guild.id), { body: commands });
+            console.log(`✅ ${commands.length} Slash Commands Registered on: ${guild.name}`);
+        }
+        // تسجيل global كمان عشان تشتغل على كل السيرفرات
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    } catch (e) { console.error("❌ Command Registration Error:", e); }
+    console.log(`✅ Logged in as ${client.user.tag}`);
     updateLiveInfo();
 });
 
