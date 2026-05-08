@@ -966,39 +966,42 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 client.on('guildMemberAdd', async (member) => {
+    // 1. تسجيل الدخول في الرادار
     sendDetailedLog(member.guild, 'New Member Joined', `Member: <@${member.id}> has joined the server.`, '#2ecc71');
+
+    // 2. إعطاء الرتب التلقائية
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
     await member.roles.add(rolesToAdd).catch(() => {});
     const welcomeCh = member.guild.channels.cache.get(CONFIG.WELCOME_CH);
     if (welcomeCh) {
-        // ✅ [UPDATED] Clean text-style welcome message
-        const welcomeContent =
-            `<@${member.id}>\n` +
-            `## 𝗪𝗲𝗹𝗰𝗼𝗺𝗲!\n` +
-            `[¡}================{!}================[¡}\n` +
-            `- You are now from team PRO! 🥳\n` +
-            `- Join us and you will be enjoying! 🎉\n` +
-            `- Chat with us and go to read rules server.\n` +
-            `[]--------------------!--------------------[]\n` +
-            `→ <#1482874761951576228> | <#1482901664951304222>\n` +
-            `[¡}================{!}================[¡}\n` +
-            `Thank you! ❤️`;
-
-        const m = await welcomeCh.send({ content: welcomeContent }).catch(() => {});
+        const welcomeEmbed = new EmbedBuilder()
+            .setTitle('𝗪𝗲𝗹𝗰𝗼𝗺𝗲!')
+            .setDescription(
+                `[¡}================{!}================[¡}\n` +
+                `- You are now from team PRO! 🥳\n` +
+                `- Join us and you will be enjoying! 🎉\n` +
+                `- Chat with us and go to read rules server.\n` +
+                `[]--------------------!--------------------[]\n` +
+                `→ <#1482874761951576228> | <#1482901664951304222>\n` +
+                `[¡}================{!}================[¡}\n` +
+                `Thank you! ❤️`)
+            .setColor('#3498db')
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .setTimestamp();
+        const m = await welcomeCh.send({ 
+            content: `<@${member.id}>`, 
+            embeds: [welcomeEmbed] 
+        }).catch(() => {});
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
-
-    // ✅ [NEW] Send a personal welcome DM to new member
     await sendModDM(
         member.user,
         '🎉 Welcome to Pro Server!',
-        `Hey **${member.user.username}**! 👋\n\nYou have successfully joined **Pro Server**. We're thrilled to have you!\n\n📜 Make sure to read the rules and enjoy your time with us. If you need any help, ask our AI in the help channel!\n\n— *Pro Robot* 🤖`,
+        `Hey **${member.user.username}**! 👋\nYou have successfully joined **Pro Server**. Enjoy your stay!`,
         member.guild.name
     );
-
     updateLiveInfo(member.guild);
 });
-
 client.on('guildMemberRemove', async (member) => {
     sendDetailedLog(member.guild, 'Member Left', `User: **${member.user.tag}** left the server.`, '#e74c3c');
     updateLiveInfo(member.guild);
@@ -1018,5 +1021,4 @@ async function updateLiveInfo(guild) {
         await infoCh.send({ content: '@everyone', embeds: [infoEmbed] });
     } catch (e) { console.error(e); }
 }
-
 client.login(process.env.TOKEN);
