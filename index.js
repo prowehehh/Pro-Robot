@@ -66,12 +66,12 @@ const CONFIG = {
     SUBMIT_LOG: '1494367980702797935',
     ROLE_CHANNEL: '1482874761951576228',
     INFO_CH: '1484641160394702958',
-    DM_LOG_CH: '1502084414421729340'        // ✅ [NEW] DM Log Channel
+    DM_LOG_CH: '1502084414421729340'
 };
 
 const adsStorage = new Map();
 const warnStorage = new Map();
-const dmAdsStorage = new Map();             // ✅ [NEW] DM Ads Storage
+const dmAdsStorage = new Map();
 
 const pendingUpdates = new Map(); 
 const ADMIN_PASSWORD = "Pro@Robot510";
@@ -130,7 +130,6 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
             .setTimestamp();
 
     } else {
-        // Fallback for outgoing system/mod DMs
         logEmbed = new EmbedBuilder()
             .setTitle('📤 DM Sent (Bot → User)')
             .addFields(
@@ -194,7 +193,6 @@ async function getEliteAIResponse(userId, userMessage, guild) {
         - TONE: Professional, helpful, and authoritative.
         - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`;
 
-    // ✅ Gemini uses "user" / "model" roles
     memory.push({ role: "user", parts: [{ text: userMessage }] });
 
     if (memory.length > 10) {
@@ -286,7 +284,9 @@ const commands = [
         .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete time (minutes)').setRequired(true))
         .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
 
-    // ✅ [NEW] /dm Command — Full DM Control Panel
+    // ============================================================
+    // ✅ /dm Command — مع إضافة reaction و delete button
+    // ============================================================
     new SlashCommandBuilder()
         .setName('dm')
         .setDescription('Full DM control panel — send messages or images to users via DM')
@@ -299,7 +299,9 @@ const commands = [
         .addAttachmentOption(o => o.setName('image').setDescription('Image to send in DM').setRequired(false))
         .addStringOption(o => o.setName('caption').setDescription('Caption text for the image').setRequired(false))
         .addStringOption(o => o.setName('color').setDescription('Embed box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'},{name:'Gold',value:'#f1c40f'}).setRequired(false))
-        .addIntegerOption(o => o.setName('repeat_interval').setDescription('Repeat DM every X minutes (0 = no repeat, like ads)').setRequired(false)),
+        .addIntegerOption(o => o.setName('repeat_interval').setDescription('Repeat DM every X minutes (0 = no repeat, like ads)').setRequired(false))
+        // ✅ [NEW] reaction option
+        .addStringOption(o => o.setName('reaction').setDescription('Emoji to auto-react on the DM message (old & new messages)').setRequired(false)),
 
 ].map(c => c.toJSON());
 
@@ -322,7 +324,7 @@ function startAdLoop(adName, guildId) {
     }, ad.interval * 60000);
 }
 
-// ✅ [NEW] DM Ads Loop — like startAdLoop but for private messages
+// ✅ DM Ads Loop — with reaction & delete button support
 function startDMAdsLoop(adName, guildId) {
     const ad = dmAdsStorage.get(adName);
     if (!ad) return;
@@ -332,17 +334,28 @@ function startDMAdsLoop(adName, guildId) {
         const guild = client.guilds.cache.get(guildId);
         if (!guild) return;
 
-        const buildPayload = (color) => {
+        const buildPayload = (userId) => {
+            // ✅ [NEW] Delete button — مربوط بـ userId بتاع كل شخص
+            const deleteRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`delete_dm_${userId}`)
+                    .setLabel('Delete Message 🗑️')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
             if (ad.style === 'embed') {
                 const embed = new EmbedBuilder()
-                    .setColor(color || '#3498db')
+                    .setColor(ad.color || '#3498db')
                     .setTimestamp();
                 if (ad.msgContent) embed.setDescription(ad.msgContent);
                 if (ad.caption) embed.setTitle(ad.caption);
                 if (ad.imageUrl) embed.setImage(ad.imageUrl);
-                return { embeds: [embed] };
+                return { embeds: [embed], components: [deleteRow] };
             } else {
-                const payload = { content: ad.msgContent || ad.caption || ' ' };
+                const payload = { 
+                    content: ad.msgContent || ad.caption || ' ',
+                    components: [deleteRow]
+                };
                 if (ad.imageUrl) payload.files = [ad.imageUrl];
                 return payload;
             }
@@ -351,8 +364,14 @@ function startDMAdsLoop(adName, guildId) {
         const sendOne = async (user) => {
             try {
                 const dm = await user.createDM();
-                const payload = buildPayload(ad.color);
+                const payload = buildPayload(user.id);
                 const sent = await dm.send(payload);
+                
+                // ✅ [NEW] Auto-react على رسالة DM الجديدة
+                if (ad.reactionEmoji) {
+                    await sent.react(ad.reactionEmoji).catch(() => {});
+                }
+
                 await logDMActivity(user.id, user.tag, ad.msgContent || '[Image]', 'AI_RESPONSE');
                 if (ad.deleteAfter > 0) setTimeout(() => sent.delete().catch(() => {}), ad.deleteAfter * 60000);
             } catch (e) {
@@ -383,10 +402,8 @@ client.on('guildUpdate', (oldGuild, newGuild) => {
     if (oldGuild.icon !== newGuild.icon) sendDetailedLog(newGuild, 'Server Icon Changed', `Server avatar has been updated.`, '#9b59b6');
 });
 
-// ✅ Boost System + Original Code
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
-    // --- [SERVER BOOST SYSTEM] ---
     if (!oldMember.premiumSince && newMember.premiumSince) {
         const BOOST_ROLE_ID = '1496789784524357703';
         const BOOST_CHANNEL_ID = '1482934834899714048';
@@ -405,7 +422,6 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
             if (boostMsg) await boostMsg.react('🎉').catch(() => {});
         }
 
-        // ✅ [NEW] DM the booster
         await sendModDM(
             newMember.user,
             '💎 Server Boost Reward',
@@ -421,7 +437,6 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
         );
     }
 
-    // --- [TIMEOUT DETECTION] — DM notify on mute ---
     const wasTimedOut = !oldMember.communicationDisabledUntil && newMember.communicationDisabledUntil;
     if (wasTimedOut) {
         const until = newMember.communicationDisabledUntil;
@@ -434,7 +449,6 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
         );
     }
 
-    // --- Original Code ---
     if (oldMember.nickname !== newMember.nickname) {
         sendDetailedLog(newMember.guild, 'Nickname Changed', `User: <@${newMember.id}>\nOld: \`${oldMember.nickname || 'None'}\`\nNew: \`${newMember.nickname || 'Original'}\``);
     }
@@ -449,7 +463,6 @@ client.on('channelDelete', (ch) => sendDetailedLog(ch.guild, 'Channel Deleted', 
 client.on('roleCreate', (role) => sendDetailedLog(role.guild, 'Role Created', `Role: **${role.name}**`, '#2ecc71'));
 client.on('roleDelete', (role) => sendDetailedLog(role.guild, 'Role Deleted', `Role: **${role.name}**`, '#e74c3c'));
 
-// ✅ [UPDATED] Ban — DM notify before logging
 client.on('guildBanAdd', async (ban) => {
     await sendModDM(
         ban.user,
@@ -516,7 +529,6 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // ✅ [NEW] Log incoming DMs to the bot — text or media
     if (message.channel.type === ChannelType.DM) {
         if (message.attachments.size > 0) {
             const attachment = message.attachments.first();
@@ -546,7 +558,6 @@ client.on('messageCreate', async (message) => {
             warnStorage.set(message.author.id, warns);
 
             if (warns === 1) {
-                // ✅ [NEW] DM warning
                 await sendModDM(message.member.user, '⚠️ Warning — Unauthorized Link', 'You sent an unauthorized link or advertisement. This is your first warning. Next violation will result in a timeout.', message.guild.name);
 
                 const warnEmbed = new EmbedBuilder()
@@ -559,12 +570,10 @@ client.on('messageCreate', async (message) => {
 
             } else if (warns === 2) {
                 await message.member.timeout(60 * 60 * 1000, 'Sending links/Advertising').catch(() => {});
-                // ✅ [NEW] DM mute notification
                 await sendModDM(message.member.user, '🤐 Timeout — 1 Hour', 'You have been muted for 1 hour for repeatedly sending unauthorized links or advertisements.', message.guild.name);
                 message.channel.send(`🤐 <@${message.author.id}> has been muted for 1 hour for repeated link violations.`);
 
             } else {
-                // ✅ [NEW] DM before ban
                 await sendModDM(message.member.user, '🚫 Permanent Ban', 'You have been permanently banned for persistent advertising and security breaches.', message.guild.name);
                 await message.member.ban({ reason: 'Persistent Advertising & Security Breach' }).catch(() => {});
                 message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for extreme advertising.`);
@@ -581,12 +590,10 @@ client.on('messageCreate', async (message) => {
         warnStorage.set(message.author.id, count);
         if (count === 1) {
             await message.member.timeout(5 * 60 * 1000, 'Swearing in server').catch(() => {});
-            // ✅ [NEW] DM mute notification
             await sendModDM(message.member.user, '🤐 Timeout — 5 Minutes', 'You have been muted for 5 minutes for using inappropriate language in the server.', message.guild.name);
             const m = await message.channel.send(`⚠️ <@${message.author.id}>, you have been muted for 5 minutes for swearing.`);
             setTimeout(() => m.delete().catch(() => {}), 10000);
         } else {
-            // ✅ [NEW] DM before ban
             await sendModDM(message.member.user, '🚫 Permanent Ban', 'You have been permanently banned for repeated use of inappropriate language.', message.guild.name);
             await message.member.ban({ reason: 'Repeated severe swearing' }).catch(() => {});
             message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for repeated swearing.`);
@@ -632,6 +639,21 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
+
+    // ============================================================
+    // ✅ [NEW] Delete DM Button — يشتغل على الرسائل القديمة والجديدة
+    // بس الشخص اللي ID بتاعه في الـ customId هو اللي يقدر يحذف
+    // ============================================================
+    if (interaction.isButton() && interaction.customId.startsWith('delete_dm_')) {
+        const targetId = interaction.customId.replace('delete_dm_', '');
+        if (interaction.user.id === targetId) {
+            await interaction.message.delete().catch(() => {});
+        } else {
+            await interaction.reply({ content: '❌ You are not authorized to delete this message.', ephemeral: true });
+        }
+        return;
+    }
+
     if (interaction.isButton() && interaction.customId === 'open_rank_modal') {
         const modal = new ModalBuilder().setCustomId('rank_modal').setTitle('Rank Request');
         const userField = new TextInputBuilder().setCustomId('xbox_user').setLabel("Username").setStyle(TextInputStyle.Short).setPlaceholder("Write your Xbox username").setRequired(true);
@@ -652,14 +674,12 @@ client.on('interactionCreate', async (interaction) => {
         const rank = interaction.fields.getTextInputValue('rank_type');
         const logCh = client.channels.cache.get(CONFIG.SUBMIT_LOG);
         if (logCh) await logCh.send(`🔔 New Rank Request from <@${interaction.user.id}>:\n**Username:** ${xbox}\n**Rank:** ${rank}`);
-        // ✅ [NEW] Log modal submit to DM log
         await logDMActivity(interaction.user.id, interaction.user.tag, `[📋 RANK MODAL SUBMIT] Xbox: ${xbox} | Rank: ${rank}`, 'IN_TEXT');
         return await interaction.reply({ content: "✅ Your request has been submitted to the owner!", ephemeral: true });
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'admin_pass_modal') {
         const enteredPass = interaction.fields.getTextInputValue('admin_password_input');
-        // ✅ [NEW] Log password attempt to DM log
         await logDMActivity(interaction.user.id, interaction.user.tag, `[🔐 ADMIN MODAL ATTEMPT] Password entered: ${enteredPass === ADMIN_PASSWORD ? '✅ Correct' : '❌ Wrong'}`, 'IN_TEXT');
         if (enteredPass === ADMIN_PASSWORD) {
             extraServerInfo = pendingUpdates.get(interaction.user.id) || "Updated via AI";
@@ -705,7 +725,6 @@ client.on('interactionCreate', async (interaction) => {
                 await targetUser.roles.add(targetRole).catch(e => console.error(e));
                 const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
                 if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
-                // ✅ [NEW] DM the user about their new role
                 await sendModDM(targetUser.user, `✨ New Role — ${targetRole.name}`, `You have been given the **${targetRole.name}** role by <@${interaction.user.id}>!`, guild.name);
                 return await interaction.editReply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.` });
             }
@@ -832,19 +851,21 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // ============================================================
-            // --- ✅ [NEW] /dm Command Handler — Full DM Control Panel ---
+            // ✅ /dm Command Handler — مع Reaction و Delete Button
             // ============================================================
             if (commandName === 'dm') {
-                const targetUser    = options.getUser('user');
-                const sendToAll     = options.getBoolean('everyone') || false;
-                const msgContent    = options.getString('message') || '';
-                const caption       = options.getString('caption') || '';
-                const image         = options.getAttachment('image');
-                const style         = options.getString('style');
-                const delay         = options.getInteger('delay_send');
-                const delAfter      = options.getInteger('delete_after');
+                const targetUser     = options.getUser('user');
+                const sendToAll      = options.getBoolean('everyone') || false;
+                const msgContent     = options.getString('message') || '';
+                const caption        = options.getString('caption') || '';
+                const image          = options.getAttachment('image');
+                const style          = options.getString('style');
+                const delay          = options.getInteger('delay_send');
+                const delAfter       = options.getInteger('delete_after');
                 const repeatInterval = options.getInteger('repeat_interval') || 0;
-                const color         = options.getString('color') || '#3498db';
+                const color          = options.getString('color') || '#3498db';
+                // ✅ [NEW] الإيموجي اللي هيتفاعل مع الرسالة — قديمة أو جديدة
+                const reactionEmoji  = options.getString('reaction') || null;
 
                 // Validation
                 if (!targetUser && !sendToAll) {
@@ -854,16 +875,26 @@ client.on('interactionCreate', async (interaction) => {
                     return await interaction.editReply({ content: '❌ You must provide a **message** or an **image** to send.' });
                 }
 
-                // Build the DM payload based on style
-                const buildDMPayload = () => {
+                // ✅ [NEW] Build DM payload — بيشمل زرار Delete مربوط بـ userId
+                const buildDMPayload = (userId) => {
+                    const deleteRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`delete_dm_${userId}`)
+                            .setLabel('Delete Message 🗑️')
+                            .setStyle(ButtonStyle.Danger)
+                    );
+
                     if (style === 'embed') {
                         const embed = new EmbedBuilder().setColor(color).setTimestamp();
                         if (msgContent) embed.setDescription(msgContent);
                         if (caption) embed.setTitle(caption);
                         if (image) embed.setImage(image.url);
-                        return { embeds: [embed] };
+                        return { embeds: [embed], components: [deleteRow] };
                     } else {
-                        const payload = { content: [msgContent, caption].filter(Boolean).join('\n') || ' ' };
+                        const payload = { 
+                            content: [msgContent, caption].filter(Boolean).join('\n') || ' ',
+                            components: [deleteRow]
+                        };
                         if (image) payload.files = [image.url];
                         return payload;
                     }
@@ -873,11 +904,15 @@ client.on('interactionCreate', async (interaction) => {
                 const sendDMToUser = async (user) => {
                     try {
                         const dmChannel = await user.createDM();
-                        const payload = buildDMPayload();
+                        const payload = buildDMPayload(user.id);
                         const sent = await dmChannel.send(payload);
-                        // Log to DM log channel
+
+                        // ✅ [NEW] Auto-react على رسالة DM بعد الإرسال
+                        if (reactionEmoji) {
+                            await sent.react(reactionEmoji).catch(() => {});
+                        }
+
                         await logDMActivity(user.id, user.tag, msgContent || caption || '[📷 Image Only]', 'AI_RESPONSE');
-                        // Auto-delete
                         if (delAfter > 0) setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
                         return true;
                     } catch (err) {
@@ -900,6 +935,8 @@ client.on('interactionCreate', async (interaction) => {
                         deleteAfter: delAfter,
                         interval: repeatInterval,
                         guildId: guild.id,
+                        // ✅ [NEW] حفظ الإيموجي في الـ DM ad
+                        reactionEmoji: reactionEmoji || null,
                         timer: null
                     };
                     dmAdsStorage.set(adKey, dmAd);
@@ -912,7 +949,7 @@ client.on('interactionCreate', async (interaction) => {
                             .setStyle(ButtonStyle.Danger)
                     );
                     return await interaction.editReply({
-                        content: `✅ **DM Ad Activated!**\n📬 Target: **${sendToAll ? '@everyone' : targetUser.tag}**\n⏱️ Repeating every **${repeatInterval}** min\n🗑️ Auto-delete after **${delAfter}** min`,
+                        content: `✅ **DM Ad Activated!**\n📬 Target: **${sendToAll ? '@everyone' : targetUser.tag}**\n⏱️ Repeating every **${repeatInterval}** min\n🗑️ Auto-delete after **${delAfter}** min${reactionEmoji ? `\n✨ Reaction: ${reactionEmoji}` : ''}`,
                         components: [stopRow]
                     });
                 }
@@ -920,7 +957,7 @@ client.on('interactionCreate', async (interaction) => {
                 // --- One-time DM send ---
                 const targetLabel = sendToAll ? '**all server members**' : `<@${targetUser.id}>`;
                 await interaction.editReply({
-                    content: `✅ DM scheduled!\n📬 Target: ${targetLabel}\n⏳ Sending in **${delay}** min\n🗑️ Auto-delete after **${delAfter}** min`
+                    content: `✅ DM scheduled!\n📬 Target: ${targetLabel}\n⏳ Sending in **${delay}** min\n🗑️ Auto-delete after **${delAfter}** min${reactionEmoji ? `\n✨ Reaction: ${reactionEmoji}` : ''}`
                 });
 
                 setTimeout(async () => {
@@ -932,7 +969,7 @@ client.on('interactionCreate', async (interaction) => {
                             if (member.user.bot) continue;
                             const ok = await sendDMToUser(member.user);
                             if (ok) successCount++;
-                            await new Promise(r => setTimeout(r, 1200)); // Rate limit safety
+                            await new Promise(r => setTimeout(r, 1200));
                         }
                         await interaction.followUp({ content: `✅ DM sent to **${successCount}** members successfully!`, ephemeral: true }).catch(() => {});
                     } else {
@@ -951,7 +988,6 @@ client.on('interactionCreate', async (interaction) => {
         const ad = adsStorage.get(name);
         if (ad) { if (ad.timer) clearInterval(ad.timer); adsStorage.delete(name); await interaction.update({ content: `🗑️ Ad **${name}** removed.`, components: [], ephemeral: true }); }
     }
-    // ✅ [NEW] Stop DM Ad Button
     else if (interaction.isButton() && interaction.customId.startsWith('stop_dmad_')) {
         const name = interaction.customId.replace('stop_dmad_', '');
         const dmAd = dmAdsStorage.get(name);
@@ -964,6 +1000,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 });
+
 client.on('guildMemberAdd', async (member) => {
     sendDetailedLog(member.guild, 'New Member Joined', `Member: <@${member.id}> has joined the server.`, '#2ecc71');
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
@@ -997,10 +1034,12 @@ client.on('guildMemberAdd', async (member) => {
     );
     updateLiveInfo(member.guild);
 });
+
 client.on('guildMemberRemove', async (member) => {
     sendDetailedLog(member.guild, 'Member Left', `User: **${member.user.tag}** left the server.`, '#e74c3c');
     updateLiveInfo(member.guild);
 });
+
 async function updateLiveInfo(guild) {
     if (!guild) guild = client.guilds.cache.first();
     const infoCh = client.channels.cache.get(CONFIG.INFO_CH);
@@ -1015,4 +1054,5 @@ async function updateLiveInfo(guild) {
         await infoCh.send({ content: '@everyone', embeds: [infoEmbed] });
     } catch (e) { console.error(e); }
 }
+
 client.login(process.env.TOKEN);
