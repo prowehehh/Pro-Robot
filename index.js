@@ -1,25 +1,29 @@
 const { 
     Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
-    ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent, Partials
+    ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent 
 } = require('discord.js');
 const express = require('express');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const mongoose = require('mongoose');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
+
 // ============================================================
-// --- ✅ [DATABASE] MongoDB Connection ---
+// --- ✅ [DATABASE] MongoDB Connection & Schema ---
 // ============================================================
+const mongoose = require('mongoose');
+
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Pro-Robot Database: Connection Successful'))
     .catch(err => console.error('❌ Pro-Robot Database: Connection Error', err));
+
 const serverSchema = new mongoose.Schema({
     guildId: String,
     cmdPermissions: { type: Map, of: String, default: {} },
     userWarns: { type: Map, of: Number, default: {} }
 });
+
 const ServerModel = mongoose.model('ServerData', serverSchema);
+
 async function getDB(guildId) {
     let data = await ServerModel.findOne({ guildId });
     if (!data) {
@@ -27,6 +31,7 @@ async function getDB(guildId) {
     }
     return data;
 }
+
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
 app.listen(process.env.PORT || 3000);
 
@@ -41,19 +46,17 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.DirectMessages,
     ],
-    partials: [Partials.Channel, Partials.Message, Partials.Reaction],
     presence: {
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 3.5.0',
+            state: 'Version: 2.2',
             type: 4
         }]
     }
 });
 
 const CONFIG = {
-    GUILD_ID: '1482874761951576221',   // ← ضع هنا ID السيرفر بتاعك
     WELCOME_CH: '1482881348204101768',
     AUTO_ROLE: '1482883802186514615',
     AUTO_ROLE_2: '1499510435639197887',
@@ -62,8 +65,7 @@ const CONFIG = {
     HELP_CH: '1497909981725593712',
     SUBMIT_LOG: '1494367980702797935',
     ROLE_CHANNEL: '1482874761951576228',
-    INFO_CH: '1484641160394702958',
-    DM_LOG_CH: '1502084414421729340'
+    INFO_CH: '1484641160394702958'
 };
 
 const adsStorage = new Map();
@@ -79,42 +81,85 @@ let extraServerInfo = "";
 const chatMemory = new Map();
 
 async function getEliteAIResponse(userId, userMessage, guild) {
-    const serverName = guild?.name || "Pro Server";
+    const memberCount = guild.memberCount;
+    const serverName = guild.name;
+    const owner = guild.members.cache.get(CONFIG.OWNER_ID)?.user.username || "Saif";
+
+    if (!chatMemory.has(userId)) {
+        chatMemory.set(userId, []);
+    }
+    let memory = chatMemory.get(userId);
+
+    const systemInstruction = {
+        role: "system",
+        content: `You are "Pro Robot", the autonomous Human-like Executive Manager of the Discord server "${serverName}".
+        - You are highly intelligent, observant, and act as if you own the server alongside ${owner}.
+        - Current Server Status: ${memberCount} members are currently under your supervision.
+        - Owner: ${owner} (<@${CONFIG.OWNER_ID}>).
+        - Current Location: Egypt.
+        - IDENTITY: You are not a simple bot; you are a sophisticated AI protector. 
+        - LANGUAGES: You are a polyglot. You MUST understand and respond fluently in ALL world languages (Arabic, English, etc.) based on the user's language.
+        - MEMORY: You remember previous parts of this conversation. Use the provided history to give continuous, smart answers.
+        - TONE: Professional, helpful, and authoritative.
+        - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`
+    };
+
+    memory.push({ role: "user", content: userMessage });
+
+    if (memory.length > 10) {
+        memory.splice(0, 2); 
+    }
 
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const chat = model.startChat({
-            history: [
-                {
-                    role: "user",
-                    parts: [{ text: `You are "Pro Robot", Executive Manager of "${serverName}". Owner: Saif. Be professional, cool, and respond fluently in the user's language (Arabic or English).` }],
-                },
-                {
-                    role: "model",
-                    parts: [{ text: "Understood. I am Pro Robot, ready to manage and protect the server." }],
-                },
-            ],
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.MISTRAL_KEY}`
+            },
+            body: JSON.stringify({
+                model: "mistral-medium",
+                messages: [systemInstruction, ...memory],
+                temperature: 0.7,
+                max_tokens: 500
+            })
         });
 
-        const result = await chat.sendMessage(userMessage);
-        const response = await result.response;
-        return response.text();
+        const data = await response.json();
+        const aiReply = data.choices?.[0]?.message?.content || `I am currently analyzing server data. Please repeat your question. <@${CONFIG.OWNER_ID}>`;
 
-    } catch (e) { 
-        console.error("Critical AI Error:", e);
-        return "⚠️ System rebooting... The AI core is busy. Please try again in a moment!"; 
+        memory.push({ role: "assistant", content: aiReply });
+        chatMemory.set(userId, memory);
+
+        return aiReply;
+
+    } catch (error) {
+        console.error("AI System Error:", error);
+        return `My connection to the main frame was interrupted. Try again! <@${CONFIG.OWNER_ID}>`;
     }
 }
 
 async function sendDetailedLog(guild, title, details, color = '#3498db') {
     const logChannel = guild.channels.cache.get(CONFIG.SUBMIT_LOG);
     if (!logChannel) return;
-    const logEmbed = new EmbedBuilder()
-        .setTitle(`📡 RADAR: ${title}`)
-        .setDescription(details)
-        .setColor(color)
-        .setTimestamp();
-    await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+
+    setTimeout(async () => {
+        const fetchedLogs = await guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
+        const logEntry = fetchedLogs?.entries.first();
+        const executor = logEntry ? logEntry.executor.tag : "System / Unknown";
+
+        const logEmbed = new EmbedBuilder()
+            .setTitle(`📡 RADAR: ${title}`)
+            .setDescription(details)
+            .addFields(
+                { name: '👤 Executor:', value: `**${executor}**`, inline: true },
+                { name: '📍 Location:', value: guild.name, inline: true }
+            )
+            .setColor(color)
+            .setTimestamp();
+
+        await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+    }, 2000);
 }
 
 const BAD_WORDS = ['word1', 'word2', 'word3']; 
@@ -288,26 +333,11 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
 
 client.on('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    try { 
-        await rest.put(
-            Routes.applicationGuildCommands(client.user.id, CONFIG.GUILD_ID), 
-            { body: commands }
-        );
-        console.log(`✅ Commands registered instantly!`);
-    } catch (e) { 
-        console.error("❌ Registration Error:", e.message); 
-    }
-    
-    console.log(`✅ Pro Robot Online: ${client.user.tag}`);
-    
-    // التعديل هنا:
-    const guild = client.guilds.cache.get(CONFIG.GUILD_ID);
-    if (guild) {
-        updateLiveInfo(guild);
-    } else {
-        console.log("⚠️ Guild not found in cache yet, skipping live update.");
-    }
+    try { await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); } catch (e) { console.error(e); }
+    console.log(`Logged in as ${client.user.tag}`);
+    updateLiveInfo();
 });
+
 // ============================================================
 // --- Main messageCreate (Automod + Anti-Link + AI Brain + DM Spy) ---
 // ============================================================
@@ -316,7 +346,7 @@ client.on('messageCreate', async (message) => {
 
     // --- ✅ [NEW] DM SPY LOGGER ---
     if (message.channel.type === ChannelType.DM) {
-        const logChannel = client.channels.cache.get(CONFIG.DM_LOG_CH);
+        const logChannel = client.channels.cache.get('1502084414421729340');
 
         if (logChannel) {
             const spyEmbed = new EmbedBuilder()
@@ -335,14 +365,6 @@ client.on('messageCreate', async (message) => {
 
             logChannel.send({ embeds: [spyEmbed] });
         }
-
-        // --- ✅ AI AUTO-REPLY IN DMs ---
-        try {
-            await message.channel.sendTyping();
-            const aiResponse = await getEliteAIResponse(message.author.id, message.content, client.guilds.cache.first());
-            await message.reply(aiResponse);
-        } catch (e) { console.log("AI DM Reply Error"); }
-
         return;
     }
 
@@ -413,7 +435,7 @@ client.on('messageCreate', async (message) => {
             const text = await getEliteAIResponse(message.author.id, cleanContent || message.content, message.guild);
             
             if (text) {
-                const isUpdateTask = cleanContent.includes("Edit") || cleanContent.includes("update") || cleanContent.includes("ضيف");
+                const isUpdateTask = cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف");
 
                 if (isUpdateTask) {
                     pendingUpdates.set(message.author.id, cleanContent);
@@ -702,11 +724,11 @@ client.on('guildMemberAdd', async (member) => {
         if (m) setTimeout(() => m.delete().catch(() => {}), 24 * 60 * 60 * 1000);
     }
 
-    // --- ✅ [CORRECTED AI WELCOME DM] ---
+    // --- ✅ [NEW] AI WELCOME DM SYSTEM ---
     try {
-        const prompt = `Create a short, cool welcome message for ${member.user.username} joining Pro Server. Use emojis.`;
-        
-        const welcomeText = await getEliteAIResponse(member.id, prompt, member.guild);
+        const prompt = `Create a short, cool, and professional welcome message in English for ${member.user.username} who joined our Minecraft server "Pro Server". Mention we are glad to have them and use emojis.`;
+        const aiResponse = await model.generateContent(prompt);
+        const welcomeText = aiResponse.response.text();
 
         const embed = new EmbedBuilder()
             .setTitle(`Welcome to Pro Server! 👑`)
@@ -717,7 +739,7 @@ client.on('guildMemberAdd', async (member) => {
         
         await member.send({ embeds: [embed] });
     } catch (e) { 
-        console.log(`❌ DM closed or AI Error for ${member.user.tag}`); 
+        console.log(`❌ DM closed for ${member.user.tag}`); 
     }
 
     updateLiveInfo(member.guild);
