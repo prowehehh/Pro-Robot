@@ -300,11 +300,20 @@ const executeSmartSend = async (user, initiator, settings) => {
         const payload = buildDMPayloadGlobal(user.id, settings);
         const sent = await dmChannel.send(payload);
 
-        // ✅ Tracking link — sent back to the command initiator's DM
+        // ✅ Tracking link — sent to DM log channel only
         const msgLink = `https://discord.com/channels/@me/${sent.channelId}/${sent.id}`;
-        await initiator.send({
-            content: `🔗 **New DM Sent to ${user.username}**\nLink: ${msgLink}`
-        }).catch(() => {});
+        const logCh = client.channels.cache.get(CONFIG.DM_LOG_CH);
+        if (logCh) {
+            await logCh.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor('#2b2d31')
+                        .setTitle('🔗 DM Tracking Link')
+                        .setDescription(`**Sent to:** ${user.username}\n\n${msgLink}`)
+                        .setTimestamp()
+                ]
+            }).catch(() => {});
+        }
 
         if (settings.reactionEmoji) {
             await sent.react(settings.reactionEmoji).catch(() => {});
