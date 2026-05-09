@@ -54,7 +54,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 3.5.0',
+            state: '🤖 Version: 4.2',
             type: 4
         }]
     }
