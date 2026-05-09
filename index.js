@@ -1,10 +1,8 @@
-// ©2026 credit by Pro king510!
-// All reserved back to Pro King510!
 const { 
     Client, GatewayIntentBits, Partials, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
     ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent,
-    UserSelectMenuBuilder // ✅ [NEW - Part 4] Added for DM user selector
+    UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -56,7 +54,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 4.1',
+            state: 'Version: 3.5.0',
             type: 4
         }]
     }
@@ -416,6 +414,21 @@ const commands = [
                .setRequired(true)
         ),
 
+    // ============================================================
+    // ✅ Message Context Menu Commands (Apps Menu)
+    // ============================================================
+    new ContextMenuCommandBuilder()
+        .setName('Delete Message')
+        .setType(ApplicationCommandType.Message),
+
+    new ContextMenuCommandBuilder()
+        .setName('Edit Message')
+        .setType(ApplicationCommandType.Message),
+
+    new ContextMenuCommandBuilder()
+        .setName('Add Reaction')
+        .setType(ApplicationCommandType.Message),
+
 ].map(c => c.toJSON());
 
 function startAdLoop(adName, guildId) {
@@ -768,6 +781,67 @@ client.on('messageCreate', async (message) => {
 client.on('interactionCreate', async (interaction) => {
 
     // ============================================================
+    // ✅ Message Context Menu Commands (Apps Menu)
+    // ============================================================
+    if (interaction.isMessageContextMenuCommand()) {
+        const targetMessage = interaction.targetMessage;
+
+        // --- Delete Message (Apps Menu) ---
+        if (interaction.commandName === 'Delete Message') {
+            try {
+                await targetMessage.delete();
+                await interaction.reply({ content: '✅ Message deleted successfully!', ephemeral: true });
+            } catch (error) {
+                let errorMessage = '❌ Could not delete the message.';
+                if (error.code === 50013) errorMessage = "❌ I don't have permission to delete this message (Need 'Manage Messages').";
+                if (error.code === 10008) errorMessage = '❌ Message not found. It might be already deleted.';
+                if (error.code === 50005) errorMessage = '❌ I cannot delete someone else\'s message in DMs!';
+                await interaction.reply({ content: errorMessage, ephemeral: true });
+            }
+            return;
+        }
+
+        // --- Edit Message (Apps Menu) ---
+        if (interaction.commandName === 'Edit Message') {
+            const oldText = targetMessage.embeds.length > 0
+                ? (targetMessage.embeds[0].description || '')
+                : (targetMessage.content || '');
+
+            const modal = new ModalBuilder()
+                .setCustomId(`smart_edit_${targetMessage.channelId}_${targetMessage.id}`)
+                .setTitle('Edit Message');
+
+            const input = new TextInputBuilder()
+                .setCustomId('updated_text')
+                .setLabel('Edit Content:')
+                .setStyle(TextInputStyle.Paragraph)
+                .setValue(oldText)
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return await interaction.showModal(modal);
+        }
+
+        // --- Add Reaction (Apps Menu) ---
+        if (interaction.commandName === 'Add Reaction') {
+            const modal = new ModalBuilder()
+                .setCustomId(`reaction_ctx_${targetMessage.channelId}_${targetMessage.id}`)
+                .setTitle('Add Reaction');
+
+            const input = new TextInputBuilder()
+                .setCustomId('reaction_emoji')
+                .setLabel('Emoji to react with:')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return await interaction.showModal(modal);
+        }
+
+        return;
+    }
+
+    // ============================================================
     // ✅ [UPDATED] Delete DM Button — Logs who deleted
     // ============================================================
     if (interaction.isButton() && interaction.customId.startsWith('delete_dm_')) {
@@ -799,6 +873,22 @@ client.on('interactionCreate', async (interaction) => {
         const passField = new TextInputBuilder().setCustomId('admin_password_input').setLabel("Admin Password").setStyle(TextInputStyle.Short).setPlaceholder("Enter Pro Robot Password").setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(passField));
         return await interaction.showModal(modal);
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('reaction_ctx_')) {
+        const parts = interaction.customId.split('_');
+        const chId  = parts[2];
+        const msgId = parts[3];
+        const emoji = interaction.fields.getTextInputValue('reaction_emoji');
+        try {
+            const targetChannel = await client.channels.fetch(chId).catch(() => null);
+            const targetMsg = await targetChannel.messages.fetch(msgId).catch(() => null);
+            await targetMsg.react(emoji);
+            await interaction.reply({ content: `✅ Reacted with ${emoji}!`, ephemeral: true });
+        } catch (e) {
+            await interaction.reply({ content: '❌ Failed to add reaction. Make sure the emoji is valid.', ephemeral: true });
+        }
+        return;
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'rank_modal') {
