@@ -54,7 +54,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 3.5.0',
+            state: 'Version: 4.0',
             type: 4
         }]
     }
@@ -348,7 +348,7 @@ const commands = [
         .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
 
     // ============================================================
-    // ✅ /dm Command — Updated to use UserSelectMenu
+    // ✅ /dm Command — user option + everyone + UserSelectMenu
     // ============================================================
     new SlashCommandBuilder()
         .setName('dm')
@@ -356,7 +356,10 @@ const commands = [
         .addStringOption(o => o.setName('style').setDescription('Message style').setRequired(true).addChoices({name:'Box (Embed)',value:'embed'},{name:'Normal',value:'normal'}))
         .addIntegerOption(o => o.setName('delay_send').setDescription('Wait time before sending (minutes, 0 = instant)').setRequired(true))
         .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete after X minutes (0 = never)').setRequired(true))
-        .addBooleanOption(o => o.setName('everyone').setDescription('Send to ALL server members (select menu = who to EXCLUDE)').setRequired(false))
+        // ✅ user option — send directly to one person (no select menu opens)
+        .addUserOption(o => o.setName('user').setDescription('Target a specific user directly (no selector UI)').setRequired(false))
+        // ✅ everyone option — opens UserSelectMenu to choose who to EXCLUDE
+        .addBooleanOption(o => o.setName('everyone').setDescription('Send to ALL members — a selector will open to pick who to EXCLUDE').setRequired(false))
         .addStringOption(o => o.setName('message').setDescription('Message text content').setRequired(false))
         .addAttachmentOption(o => o.setName('image').setDescription('Image to send in DM').setRequired(false))
         .addStringOption(o => o.setName('caption').setDescription('Caption text for the image').setRequired(false))
@@ -1065,10 +1068,13 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // ============================================================
-            // ✅ [NEW - Part 4] /dm Command Handler — Now uses UserSelectMenu
-            // Saves settings to dmSettingsStorage, then shows user selector UI
+            // ✅ /dm Command Handler
+            // Mode 1: user option → direct send, no UI
+            // Mode 2: no user, everyone=false → UserSelectMenu to pick targets
+            // Mode 3: everyone=true → UserSelectMenu to exclude + Send to All button
             // ============================================================
             if (commandName === 'dm') {
+                const targetUser     = options.getUser('user');
                 const isEveryone     = options.getBoolean('everyone') || false;
                 const style          = options.getString('style');
                 const delay          = options.getInteger('delay_send');
@@ -1084,12 +1090,12 @@ client.on('interactionCreate', async (interaction) => {
                     return await interaction.editReply({ content: '❌ You must provide a **message** or an **image** to send.' });
                 }
 
-                // --- Repeating DM (ads system) — unchanged ---
+                // --- Repeating DM (ads system) ---
                 if (repeatInterval > 0) {
-                    const adKey = `dmad_everyone_${Date.now()}`;
+                    const adKey = `dmad_${Date.now()}`;
                     const dmAd = {
                         name: adKey,
-                        targetUserId: isEveryone ? 'everyone' : 'everyone',
+                        targetUserId: targetUser ? targetUser.id : 'everyone',
                         msgContent, caption,
                         imageUrl: image?.url || null,
                         style, color,
@@ -1101,12 +1107,8 @@ client.on('interactionCreate', async (interaction) => {
                     };
                     dmAdsStorage.set(adKey, dmAd);
                     startDMAdsLoop(adKey, guild.id);
-
                     const stopRow = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`stop_dmad_${adKey}`)
-                            .setLabel('Stop DM Ad 🗑️')
-                            .setStyle(ButtonStyle.Danger)
+                        new ButtonBuilder().setCustomId(`stop_dmad_${adKey}`).setLabel('Stop DM Ad 🗑️').setStyle(ButtonStyle.Danger)
                     );
                     return await interaction.editReply({
                         content: `✅ **DM Ad Activated!**\n⏱️ Repeating every **${repeatInterval}** min\n🗑️ Auto-delete after **${delAfter}** min${reactionEmoji ? `\n✨ Reaction: ${reactionEmoji}` : ''}`,
@@ -1114,32 +1116,52 @@ client.on('interactionCreate', async (interaction) => {
                     });
                 }
 
-                // ✅ Save settings for when the select menu fires
-                dmSettingsStorage.set(interaction.user.id, {
-                    style, delay, delAfter,
-                    msgContent, caption,
-                    imageUrl: image?.url || null,
-                    color, reactionEmoji
-                });
+                const settings = { style, delay, delAfter, msgContent, caption, imageUrl: image?.url || null, color, reactionEmoji };
 
-                // ✅ Show the UserSelectMenu (checkbox-style user picker)
-                const userSelect = new UserSelectMenuBuilder()
-                    .setCustomId(isEveryone ? 'dm_exclude_select' : 'dm_target_select')
-                    .setPlaceholder(
-                        isEveryone
-                            ? '🚫 Select users to EXCLUDE (they will NOT receive the DM)'
-                            : '✅ Select users to SEND the message to'
-                    )
+                // ── Mode 1: Direct user — send immediately, no selector UI ──
+                if (targetUser && !isEveryone) {
+                    await interaction.editReply({ content: `✅ Scheduling DM to **${targetUser.username}** in ${delay} min...` });
+                    setTimeout(async () => {
+                        const ok = await executeSmartSend(targetUser, interaction.user, settings);
+                        await interaction.followUp({ content: ok ? `✅ DM sent to **${targetUser.username}**!` : `❌ Failed to DM **${targetUser.username}**.`, ephemeral: true }).catch(() => {});
+                    }, delay * 60000);
+                    return;
+                }
+
+                // Save settings so the select menu handler can retrieve them
+                dmSettingsStorage.set(interaction.user.id, settings);
+
+                // ── Mode 2: No user, everyone=false → target selector ──
+                if (!isEveryone) {
+                    const userSelect = new UserSelectMenuBuilder()
+                        .setCustomId('dm_target_select')
+                        .setPlaceholder('✅ Select users to SEND the DM to')
+                        .setMinValues(1)
+                        .setMaxValues(25);
+                    return await interaction.editReply({
+                        content: '👤 **Direct Mode:** Select who to **message**:',
+                        components: [new ActionRowBuilder().addComponents(userSelect)]
+                    });
+                }
+
+                // ── Mode 3: everyone=true → exclude selector + Send to All button ──
+                const excludeSelect = new UserSelectMenuBuilder()
+                    .setCustomId('dm_exclude_select')
+                    .setPlaceholder('🚫 Select users to EXCLUDE (they will NOT receive the DM)')
                     .setMinValues(1)
                     .setMaxValues(25);
 
-                const row = new ActionRowBuilder().addComponents(userSelect);
+                const sendAllBtn = new ButtonBuilder()
+                    .setCustomId('dm_send_to_all')
+                    .setLabel('Send to All (No Exclusions) ✅')
+                    .setStyle(ButtonStyle.Success);
 
                 return await interaction.editReply({
-                    content: isEveryone
-                        ? '📢 **Everyone Mode:** Select who to **skip** (leave empty to send to all):'
-                        : '👤 **Direct Mode:** Select who to **message**:',
-                    components: [row]
+                    content: '📢 **Everyone Mode:**\n• Use the selector to **skip** specific users\n• Or click **"Send to All"** to send with no exclusions',
+                    components: [
+                        new ActionRowBuilder().addComponents(excludeSelect),
+                        new ActionRowBuilder().addComponents(sendAllBtn)
+                    ]
                 });
             }
 
@@ -1148,6 +1170,27 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.deferred) await interaction.editReply("❌ An error occurred.").catch(() => {});
         }
     } 
+    // ============================================================
+    // ✅ [NEW] dm_send_to_all Button — Everyone mode with no exclusions
+    // ============================================================
+    else if (interaction.isButton() && interaction.customId === 'dm_send_to_all') {
+        const settings = dmSettingsStorage.get(interaction.user.id);
+        if (!settings) {
+            return await interaction.update({ content: '❌ Session expired. Please run /dm again.', components: [] });
+        }
+        await interaction.update({ content: '⏳ Sending to all members... This may take a while.', components: [] });
+        const members = await interaction.guild.members.fetch().catch(() => null);
+        if (!members) return;
+        let successCount = 0;
+        for (const [, member] of members) {
+            if (member.user.bot) continue;
+            const ok = await executeSmartSend(member.user, interaction.user, settings);
+            if (ok) successCount++;
+            await new Promise(r => setTimeout(r, 1200));
+        }
+        dmSettingsStorage.delete(interaction.user.id);
+        await interaction.followUp({ content: `✅ DM sent to **${successCount}** members successfully!`, ephemeral: true }).catch(() => {});
+    }
     else if (interaction.isButton() && interaction.customId.startsWith('stop_ad_')) {
         const name = interaction.customId.replace('stop_ad_', '');
         const ad = adsStorage.get(name);
