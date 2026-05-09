@@ -1,3 +1,5 @@
+// ©2026 credit by Pro king510!
+// All reserved back to Pro King510!
 const { 
     Client, GatewayIntentBits, Partials, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
@@ -54,7 +56,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: 'Version: 4.0',
+            state: 'Version: 4.1',
             type: 4
         }]
     }
@@ -404,6 +406,15 @@ const commands = [
         .setName('edit')
         .setDescription('Edit a previously sent bot message using its link')
         .addStringOption(o => o.setName('message_link').setDescription('The full message link to edit').setRequired(true)),
+
+    new SlashCommandBuilder()
+        .setName('delete')
+        .setDescription('Delete a message using its link')
+        .addStringOption(opt => 
+            opt.setName('message_link')
+               .setDescription('Paste the message link here')
+               .setRequired(true)
+        ),
 
 ].map(c => c.toJSON());
 
@@ -1099,6 +1110,37 @@ client.on('interactionCreate', async (interaction) => {
                         setTimeout(() => sent.delete().catch(() => {}), delAfter * 60000);
                     }
                 }, delay * 60000);
+            }
+
+            if (commandName === 'delete') {
+                const link = interaction.options.getString('message_link');
+                
+                const parts = link.split('/');
+                const messageId = parts[parts.length - 1];
+                const channelId = parts[parts.length - 2];
+
+                try {
+                    const channel = await client.channels.fetch(channelId);
+                    const targetMessage = await channel.messages.fetch(messageId);
+
+                    await targetMessage.delete();
+
+                    await interaction.editReply({ 
+                        content: "✅ Message deleted successfully!"
+                    });
+
+                } catch (error) {
+                    console.error(error);
+                    
+                    let errorMessage = "❌ Could not delete the message.";
+                    if (error.code === 50013) errorMessage = "❌ I don't have permission to delete this message (Need 'Manage Messages').";
+                    if (error.code === 10008) errorMessage = "❌ Message not found. It might be already deleted.";
+                    if (error.code === 50005) errorMessage = "❌ I cannot delete someone else's message in DMs!";
+
+                    await interaction.editReply({ 
+                        content: errorMessage
+                    });
+                }
             }
 
             // ============================================================
