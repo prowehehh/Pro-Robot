@@ -945,13 +945,21 @@ client.on('interactionCreate', async (interaction) => {
             const targetMsg     = await targetChannel.messages.fetch(msgId).catch(() => null);
             const reaction      = targetMsg.reactions.cache.get(emojiVal);
             if (reaction) {
-                await reaction.remove();
+                const isDM = targetChannel.type === ChannelType.DM;
+                if (isDM) {
+                    // In DMs — can only remove bot's own reaction
+                    await reaction.users.remove(client.user.id);
+                } else {
+                    // In server — remove all users' reactions for this emoji
+                    await reaction.remove();
+                }
                 await interaction.update({ content: `✅ Reaction removed successfully!`, components: [] });
             } else {
                 await interaction.update({ content: '❌ Reaction not found.', components: [] });
             }
         } catch (e) {
-            await interaction.reply({ content: '❌ Failed to remove reaction. (Need Manage Messages permission)', ephemeral: true });
+            console.error(e);
+            await interaction.reply({ content: '❌ Failed to remove reaction.', ephemeral: true });
         }
         return;
     }
