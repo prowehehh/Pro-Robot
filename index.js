@@ -54,7 +54,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: '🤖| Version: 4.3',
+            state: '🤖 | Version: 4.5',
             type: 4
         }]
     }
@@ -413,6 +413,10 @@ const commands = [
                .setDescription('Paste the message link here')
                .setRequired(true)
         ),
+
+    new SlashCommandBuilder()
+        .setName('check')
+        .setDescription('Get a full private status report of the server'),
 
     // ============================================================
     // ✅ Message Context Menu Commands (Apps Menu)
@@ -1012,6 +1016,71 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
         const { commandName, options, guild, channel } = interaction;
+
+        // ============================================================
+        // ✅ /check — Full Server Status Report (Ephemeral)
+        // ============================================================
+        if (commandName === 'check') {
+            const { guild } = interaction;
+
+            // 1. Fetch all members for accurate presence data
+            const members = await guild.members.fetch().catch(() => null);
+            const totalMembers  = guild.memberCount;
+            const botCount      = members ? members.filter(m => m.user.bot).size : 0;
+            const humanCount    = totalMembers - botCount;
+            const onlineMembers = members ? members.filter(m => m.presence?.status === 'online').size : 0;
+            const idleMembers   = members ? members.filter(m => m.presence?.status === 'idle').size : 0;
+            const dndMembers    = members ? members.filter(m => m.presence?.status === 'dnd').size : 0;
+            const offlineMembers = Math.max(0, humanCount - onlineMembers - idleMembers - dndMembers);
+
+            // 2. Server info
+            const channelCount = guild.channels.cache.size;
+            const roleCount    = guild.roles.cache.size;
+            const boostCount   = guild.premiumSubscriptionCount || 0;
+            const boostTier    = guild.premiumTier || 0;
+            const createdAt    = `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>`;
+
+            // 3. Recent violations from Audit Log (Timeout=24, Kick=20, Ban=22)
+            const auditLogs = await guild.fetchAuditLogs({ limit: 10 }).catch(() => null);
+            const violations = auditLogs?.entries
+                .filter(entry => [24, 20, 22].includes(entry.action))
+                .map(entry => {
+                    const actionName = entry.action === 24 ? '🤐 Timeout'
+                                     : entry.action === 20 ? '👢 Kick'
+                                     : '🚫 Ban';
+                    const executor = entry.executor ? `<@${entry.executor.id}>` : 'Unknown';
+                    const target   = entry.target   ? `<@${entry.target.id}>`   : 'Unknown';
+                    return `• ${actionName} ${target} by ${executor}\n  └ Reason: **${entry.reason || 'No reason provided'}**`;
+                })
+                .join('\n') || '✅ No recent violations found.';
+
+            // 4. Server health checks — flags any issues
+            const issues = [];
+            if (boostTier === 0)                                    issues.push('⚠️ No active Server Boost');
+            if (guild.verificationLevel === 0)                      issues.push('⚠️ Verification level is NONE — low security');
+            if (humanCount > 0 && offlineMembers / humanCount > 0.8) issues.push('⚠️ Over 80% of members are offline');
+            if (channelCount > 50)                                  issues.push('⚠️ High channel count — consider organizing');
+            if (roleCount > 30)                                     issues.push('⚠️ High role count — consider cleanup');
+
+            const healthStatus = issues.length === 0
+                ? '✅ All systems operational — no issues detected'
+                : issues.join('\n');
+
+            const statusEmbed = new EmbedBuilder()
+                .setColor('#2b2d31')
+                .setTitle(`📊 Server Status Report — ${guild.name}`)
+                .setThumbnail(guild.iconURL({ dynamic: true }))
+                .addFields(
+                    { name: '👥 Members', value: `Total: **${totalMembers}** (Humans: **${humanCount}** | Bots: **${botCount}**)\n🟢 Online: **${onlineMembers}**  🟡 Idle: **${idleMembers}**  🔴 DND: **${dndMembers}**  ⚫ Offline: **${offlineMembers}**`, inline: false },
+                    { name: '📋 Server Info', value: `Channels: **${channelCount}**  |  Roles: **${roleCount}**\nBoosts: **${boostCount}** (Tier **${boostTier}**)  |  Verification: **${guild.verificationLevel}**\nCreated: ${createdAt}`, inline: false },
+                    { name: '🔍 Server Health', value: healthStatus, inline: false },
+                    { name: '🚫 Recent Actions (Kick / Ban / Timeout)', value: violations.length > 1024 ? violations.substring(0, 1020) + '...' : violations, inline: false }
+                )
+                .setFooter({ text: '🔒 This report is private and only visible to you.' })
+                .setTimestamp();
+
+            return await interaction.reply({ embeds: [statusEmbed], ephemeral: true });
+        }
 
         // ============================================================
         // ✅ [NEW - Part 1] /edit — Show modal BEFORE deferReply
