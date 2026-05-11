@@ -54,7 +54,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: '🤖 Version: 4.2',
+            state: '🤖| Version: 4.3',
             type: 4
         }]
     }
@@ -95,7 +95,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('📥 INCOMING PRIVATE SIGNAL')
             .addFields(
-                { name: 'Sender', value: `${username}`, inline: true },
+                { name: 'Sender', value: `<@${userId}>`, inline: true },
                 { name: 'User ID', value: `${userId}`, inline: true },
                 { name: 'Message Content', value: content || '[Empty]', inline: false }
             )
@@ -106,7 +106,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('🖼️ PRIVATE MEDIA DETECTED')
             .addFields(
-                { name: 'Sender', value: `${username}`, inline: true },
+                { name: 'Sender', value: `<@${userId}>`, inline: true },
                 { name: 'Status', value: 'Attachment Received', inline: true },
                 { name: 'Content', value: '(The image will be displayed below)', inline: false }
             )
@@ -118,7 +118,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('🤖 AI AUTOMATIC RESPONSE')
             .addFields(
-                { name: 'Target User', value: `${username}`, inline: true },
+                { name: 'Target User', value: `<@${userId}>`, inline: true },
                 { name: 'AI Response', value: content || '[Empty]', inline: false }
             )
             .setColor('#3498db')
@@ -128,7 +128,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('⚠️ DM SYSTEM ALERT')
             .addFields(
-                { name: 'User', value: `${username}`, inline: true },
+                { name: 'User', value: `<@${userId}>`, inline: true },
                 { name: 'Activity', value: content || 'Multiple messages detected.', inline: false }
             )
             .setColor('#e74c3c')
@@ -138,7 +138,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('📤 DM Sent (Bot → User)')
             .addFields(
-                { name: 'Target', value: `${username} \`(${userId})\``, inline: true },
+                { name: 'Target', value: `<@${userId}>`, inline: true },
                 { name: 'Content', value: content || '[Empty]', inline: false }
             )
             .setColor('#2ecc71')
@@ -240,7 +240,7 @@ async function sendDetailedLog(guild, title, details, color = '#3498db') {
     setTimeout(async () => {
         const fetchedLogs = await guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
         const logEntry = fetchedLogs?.entries.first();
-        const executor = logEntry ? logEntry.executor.tag : "System / Unknown";
+        const executor = logEntry ? `<@${logEntry.executor.id}>` : "System / Unknown";
 
         const logEmbed = new EmbedBuilder()
             .setTitle(`📡 RADAR: ${title}`)
