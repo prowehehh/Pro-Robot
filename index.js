@@ -1069,7 +1069,6 @@ client.on('interactionCreate', async (interaction) => {
             const statusEmbed = new EmbedBuilder()
                 .setColor('#2b2d31')
                 .setTitle(`📊 Server Status Report — ${guild.name}`)
-                .setThumbnail(guild.iconURL({ dynamic: true }))
                 .addFields(
                     { name: '👥 Members', value: `Total: **${totalMembers}** (Humans: **${humanCount}** | Bots: **${botCount}**)\n🟢 Online: **${onlineMembers}**  🟡 Idle: **${idleMembers}**  🔴 DND: **${dndMembers}**  ⚫ Offline: **${offlineMembers}**`, inline: false },
                     { name: '📋 Server Info', value: `Channels: **${channelCount}**  |  Roles: **${roleCount}**\nBoosts: **${boostCount}** (Tier **${boostTier}**)  |  Verification: **${guild.verificationLevel}**\nCreated: ${createdAt}`, inline: false },
