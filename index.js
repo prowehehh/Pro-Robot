@@ -2,7 +2,8 @@ const {
     Client, GatewayIntentBits, Partials, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
     ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent,
-    UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType
+    UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType,
+    StringSelectMenuBuilder
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -367,9 +368,18 @@ const commands = [
     new SlashCommandBuilder().setName('slash_control').setDescription('Restrict a command to a specific role').addStringOption(o => o.setName('command_name').setDescription('The command to restrict').setRequired(true)).addRoleOption(o => o.setName('allowed_role').setDescription('The role allowed to use this command').setRequired(true)),
     new SlashCommandBuilder()
         .setName('reaction')
-        .setDescription('Add a reaction to a specific message using its link')
-        .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
-        .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true)),
+        .setDescription('Manage reactions on messages')
+        .addSubcommand(sub =>
+            sub.setName('add')
+                .setDescription('Add a reaction to a specific message using its link')
+                .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
+                .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('remove')
+                .setDescription('Remove a specific reaction from a message using its link')
+                .addStringOption(o => o.setName('message_link').setDescription('The link of the message').setRequired(true))
+        ),
     new SlashCommandBuilder()
         .setName('picture')
         .setDescription('Send pictures with auto-send and auto-delete timers')
@@ -431,6 +441,10 @@ const commands = [
 
     new ContextMenuCommandBuilder()
         .setName('Add Reaction')
+        .setType(ApplicationCommandType.Message),
+
+    new ContextMenuCommandBuilder()
+        .setName('Remove Reaction')
         .setType(ApplicationCommandType.Message),
 
 ].map(c => c.toJSON());
@@ -842,6 +856,29 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
+        // --- Remove Reaction (Apps Menu) ---
+        if (interaction.commandName === 'Remove Reaction') {
+            const reactions = targetMessage.reactions.cache;
+            if (reactions.size === 0) {
+                return await interaction.reply({ content: '❌ No reactions found on this message.', ephemeral: true });
+            }
+            const selectOptions = reactions.map(r => ({
+                label: `Remove ${r.emoji.name}`,
+                description: `Count: ${r.count}`,
+                value: r.emoji.id || r.emoji.name,
+                emoji: r.emoji.id ? { id: r.emoji.id } : { name: r.emoji.name }
+            }));
+            const selector = new StringSelectMenuBuilder()
+                .setCustomId(`delete_reaction_${targetMessage.channelId}_${targetMessage.id}`)
+                .setPlaceholder('Choose the reaction to remove...')
+                .addOptions(selectOptions);
+            return await interaction.reply({
+                content: '🔍 Select the reaction you want to remove:',
+                components: [new ActionRowBuilder().addComponents(selector)],
+                ephemeral: true
+            });
+        }
+
         return;
     }
 
@@ -891,6 +928,30 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `✅ Reacted with ${emoji}!`, ephemeral: true });
         } catch (e) {
             await interaction.reply({ content: '❌ Failed to add reaction. Make sure the emoji is valid.', ephemeral: true });
+        }
+        return;
+    }
+
+    // ============================================================
+    // ✅ Remove Reaction — StringSelectMenu Handler
+    // ============================================================
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('delete_reaction_')) {
+        const parts    = interaction.customId.split('_');
+        const chId     = parts[2];
+        const msgId    = parts[3];
+        const emojiVal = interaction.values[0];
+        try {
+            const targetChannel = await client.channels.fetch(chId).catch(() => null);
+            const targetMsg     = await targetChannel.messages.fetch(msgId).catch(() => null);
+            const reaction      = targetMsg.reactions.cache.get(emojiVal);
+            if (reaction) {
+                await reaction.remove();
+                await interaction.update({ content: `✅ Reaction removed successfully!`, components: [] });
+            } else {
+                await interaction.update({ content: '❌ Reaction not found.', components: [] });
+            }
+        } catch (e) {
+            await interaction.reply({ content: '❌ Failed to remove reaction. (Need Manage Messages permission)', ephemeral: true });
         }
         return;
     }
@@ -1219,26 +1280,57 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (commandName === 'reaction') {
-                const link = options.getString('link');
-                const emoji = options.getString('emoji');
+                const subcommand = options.getSubcommand();
 
-                const linkParts = link.split('/');
-                const channelId = linkParts[linkParts.length - 2];
-                const messageId = linkParts[linkParts.length - 1];
+                if (subcommand === 'add') {
+                    const link = options.getString('link');
+                    const emoji = options.getString('emoji');
+                    const linkParts = link.split('/');
+                    const channelId = linkParts[linkParts.length - 2];
+                    const messageId = linkParts[linkParts.length - 1];
+                    try {
+                        const targetChannel = await guild.channels.fetch(channelId);
+                        if (!targetChannel) return await interaction.editReply("❌ Channel not found.");
+                        const targetMsg = await targetChannel.messages.fetch(messageId);
+                        if (!targetMsg) return await interaction.editReply("❌ Message not found.");
+                        await targetMsg.react(emoji);
+                        return await interaction.editReply({ content: `✅ Successfully reacted with ${emoji} to the message!` });
+                    } catch (error) {
+                        console.error(error);
+                        return await interaction.editReply({ content: "❌ Failed to add reaction. Make sure the link and emoji are valid." });
+                    }
+                }
 
-                try {
-                    const targetChannel = await guild.channels.fetch(channelId);
-                    if (!targetChannel) return await interaction.editReply("❌ Channel not found.");
-
-                    const targetMsg = await targetChannel.messages.fetch(messageId);
-                    if (!targetMsg) return await interaction.editReply("❌ Message not found.");
-
-                    await targetMsg.react(emoji);
-                    return await interaction.editReply({ content: `✅ Successfully reacted with ${emoji} to the message!` });
-
-                } catch (error) {
-                    console.error(error);
-                    return await interaction.editReply({ content: "❌ Failed to add reaction. Make sure the link and emoji are valid." });
+                if (subcommand === 'remove') {
+                    const link = options.getString('message_link');
+                    const linkParts = link.split('/');
+                    const channelId = linkParts[linkParts.length - 2];
+                    const messageId = linkParts[linkParts.length - 1];
+                    try {
+                        const targetChannel = await client.channels.fetch(channelId);
+                        const targetMsg = await targetChannel.messages.fetch(messageId);
+                        const reactions = targetMsg.reactions.cache;
+                        if (reactions.size === 0) {
+                            return await interaction.editReply('❌ No reactions found on this message.');
+                        }
+                        const selectOptions = reactions.map(r => ({
+                            label: `Remove ${r.emoji.name}`,
+                            description: `Count: ${r.count}`,
+                            value: r.emoji.id || r.emoji.name,
+                            emoji: r.emoji.id ? { id: r.emoji.id } : { name: r.emoji.name }
+                        }));
+                        const selector = new StringSelectMenuBuilder()
+                            .setCustomId(`delete_reaction_${channelId}_${messageId}`)
+                            .setPlaceholder('Choose the reaction to remove...')
+                            .addOptions(selectOptions);
+                        return await interaction.editReply({
+                            content: '🔍 Select the reaction you want to remove:',
+                            components: [new ActionRowBuilder().addComponents(selector)]
+                        });
+                    } catch (error) {
+                        console.error(error);
+                        return await interaction.editReply({ content: "❌ Could not find message. Check permissions or link." });
+                    }
                 }
             }
 
