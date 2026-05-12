@@ -3,7 +3,7 @@ const {
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
     ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent,
     UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType,
-    StringSelectMenuBuilder
+    StringSelectMenuBuilder, PermissionFlagsBits
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -267,7 +267,6 @@ const generalLinkRegex = /(https?:\/\/[^\s]+)/gi;
 
 // ============================================================
 // ✅ [NEW - Part 3] Smart Sending Function
-// Sends DM and tracks message link back to initiator
 // ============================================================
 const buildDMPayloadGlobal = (userId, settings) => {
     const { style, msgContent, caption, imageUrl, color, showDeleteButton } = settings;
@@ -304,7 +303,6 @@ const executeSmartSend = async (user, initiator, settings) => {
         const payload = buildDMPayloadGlobal(user.id, settings);
         const sent = await dmChannel.send(payload);
 
-        // ✅ Tracking link — sent to DM log channel only
         const msgLink = `https://discord.com/channels/@me/${sent.channelId}/${sent.id}`;
         const logCh = client.channels.cache.get(CONFIG.DM_LOG_CH);
         if (logCh) {
@@ -335,16 +333,10 @@ const executeSmartSend = async (user, initiator, settings) => {
     }
 };
 
-// Function to execute the sending
 async function sendAnonymousDM(targetUser, initiator, messageContent) {
     try {
-        // 1. Send to the target (The user sees ONLY the bot)
         const sent = await targetUser.send({ content: messageContent });
-
-        // 2. Generate the tracking link
         const trackingLink = `https://discord.com/channels/@me/${sent.channelId}/${sent.id}`;
-
-        // 3. Send the link to YOU in a separate Box (Embed)
         await initiator.send({
             embeds: [
                 new EmbedBuilder()
@@ -393,7 +385,7 @@ const commands = [
         .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
 
     // ============================================================
-    // ✅ /dm Command — user option + everyone + UserSelectMenu
+    // ✅ /dm Command
     // ============================================================
     new SlashCommandBuilder()
         .setName('dm')
@@ -412,7 +404,7 @@ const commands = [
         .addBooleanOption(o => o.setName('delete_button').setDescription('Show a red Delete button to the recipient (default: off)').setRequired(false)),
 
     // ============================================================
-    // ✅ /edit Command — Now opens a modal with old content pre-filled
+    // ✅ /edit Command
     // ============================================================
     new SlashCommandBuilder()
         .setName('edit')
@@ -431,6 +423,24 @@ const commands = [
     new SlashCommandBuilder()
         .setName('check')
         .setDescription('Get a full private status report of the server'),
+
+    // ============================================================
+    // ✅ [NEW] /setup-form Command
+    // ============================================================
+    new SlashCommandBuilder()
+        .setName('setup-form')
+        .setDescription('Create a fully customized submission form (works in server & DMs)')
+        .addStringOption(opt => opt.setName('button_name').setDescription('Name on the button').setRequired(true))
+        .addStringOption(opt => opt.setName('button_color').setDescription('Blue, Green, Grey, Red').setRequired(true)
+            .addChoices(
+                { name: 'Blue',  value: 'Primary'   },
+                { name: 'Green', value: 'Success'   },
+                { name: 'Grey',  value: 'Secondary' },
+                { name: 'Red',   value: 'Danger'    }
+            ))
+        .addChannelOption(opt => opt.setName('target_channel').setDescription('Where results will be sent').setRequired(true))
+        .addBooleanOption(opt => opt.setName('send_to_dm').setDescription('Send the form button to a user DM instead of here').setRequired(false))
+        .addUserOption(opt => opt.setName('dm_user').setDescription('The user to send the form button to (required if send_to_dm is true)').setRequired(false)),
 
     // ============================================================
     // ✅ Message Context Menu Commands (Apps Menu)
@@ -808,7 +818,6 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isMessageContextMenuCommand()) {
         const targetMessage = interaction.targetMessage;
 
-        // --- Delete Message (Apps Menu) ---
         if (interaction.commandName === 'Delete Message') {
             try {
                 await targetMessage.delete();
@@ -823,7 +832,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // --- Edit Message (Apps Menu) ---
         if (interaction.commandName === 'Edit Message') {
             const oldText = targetMessage.embeds.length > 0
                 ? (targetMessage.embeds[0].description || '')
@@ -844,7 +852,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // --- Add Reaction (Apps Menu) ---
         if (interaction.commandName === 'Add Reaction') {
             const modal = new ModalBuilder()
                 .setCustomId(`reaction_ctx_${targetMessage.channelId}_${targetMessage.id}`)
@@ -860,7 +867,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // --- Remove Reaction (Apps Menu) ---
         if (interaction.commandName === 'Remove Reaction') {
             const reactions = targetMessage.reactions.cache;
             if (reactions.size === 0) {
@@ -887,7 +893,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ✅ [UPDATED] Delete DM Button — Logs who deleted
+    // ✅ [UPDATED] Delete DM Button
     // ============================================================
     if (interaction.isButton() && interaction.customId.startsWith('delete_dm_')) {
         const targetId = interaction.customId.replace('delete_dm_', '');
@@ -917,6 +923,37 @@ client.on('interactionCreate', async (interaction) => {
         const modal = new ModalBuilder().setCustomId('admin_pass_modal').setTitle('Admin Verification');
         const passField = new TextInputBuilder().setCustomId('admin_password_input').setLabel("Admin Password").setStyle(TextInputStyle.Short).setPlaceholder("Enter Pro Robot Password").setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(passField));
+        return await interaction.showModal(modal);
+    }
+
+    // ============================================================
+    // ✅ [NEW] form_start_ Button — Opens the submission modal
+    // ============================================================
+    if (interaction.isButton() && interaction.customId.startsWith('form_start_')) {
+        const targetChannelId = interaction.customId.split('_')[2];
+
+        const modal = new ModalBuilder()
+            .setCustomId(`submit_modal_${targetChannelId}`)
+            .setTitle('Custom Submission Form');
+
+        const nameField = new TextInputBuilder()
+            .setCustomId('user_name')
+            .setLabel('Enter your name:')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Type here...')
+            .setRequired(true);
+
+        const detailsField = new TextInputBuilder()
+            .setCustomId('user_details')
+            .setLabel('Details / Description:')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(false);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(nameField),
+            new ActionRowBuilder().addComponents(detailsField)
+        );
+
         return await interaction.showModal(modal);
     }
 
@@ -951,10 +988,8 @@ client.on('interactionCreate', async (interaction) => {
             if (reaction) {
                 const isDM = targetChannel.type === ChannelType.DM;
                 if (isDM) {
-                    // In DMs — can only remove bot's own reaction
                     await reaction.users.remove(client.user.id);
                 } else {
-                    // In server — remove all users' reactions for this emoji
                     await reaction.remove();
                 }
                 await interaction.update({ content: `✅ Reaction removed successfully!`, components: [] });
@@ -992,10 +1027,10 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ✅ [NEW - Part 1] smart_edit Modal Submit Handler
+    // ✅ smart_edit Modal Submit Handler
     // ============================================================
     if (interaction.isModalSubmit() && interaction.customId.startsWith('smart_edit_')) {
-        const parts   = interaction.customId.split('_'); // smart_edit_{chId}_{msgId}
+        const parts   = interaction.customId.split('_');
         const chId    = parts[2];
         const msgId   = parts[3];
         const newText = interaction.fields.getTextInputValue('updated_text');
@@ -1029,19 +1064,44 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ✅ [NEW - Part 2 & 3] User Select Menu Handler
-    // Snippet 3 — Handles dm_target_select (Direct Mode) &
-    //             dm_exclude_select (Everyone Mode)
+    // ✅ [NEW] submit_modal_ Handler — Receives form data and sends to target channel
+    // ============================================================
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('submit_modal_')) {
+        const targetChannelId = interaction.customId.split('_')[2];
+        const userName    = interaction.fields.getTextInputValue('user_name');
+        const userDetails = interaction.fields.getTextInputValue('user_details');
+
+        const resultEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('📥 New Submission Received')
+            .addFields(
+                { name: 'From User',        value: `<@${interaction.user.id}>`, inline: true },
+                { name: 'Field 1: Name',    value: userName },
+                { name: 'Field 2: Details', value: userDetails || 'No details' }
+            )
+            .setTimestamp();
+
+        try {
+            const targetChannel = await client.channels.fetch(targetChannelId);
+            await targetChannel.send({ embeds: [resultEmbed] });
+            return await interaction.reply({ content: '✅ Your information has been sent successfully!', ephemeral: true });
+        } catch (e) {
+            console.error('❌ submit_modal error:', e);
+            return await interaction.reply({ content: '❌ Failed to send your submission. Please try again.', ephemeral: true });
+        }
+    }
+
+    // ============================================================
+    // ✅ User Select Menu Handler
     // ============================================================
     if (interaction.isUserSelectMenu()) {
-        const selectedUsers = interaction.users; // دول الناس اللي أنت علمت عليهم صح (Checked)
+        const selectedUsers = interaction.users;
         const settings      = dmSettingsStorage.get(interaction.user.id);
 
         if (!settings) {
             return await interaction.update({ content: '❌ Session expired. Please run /dm again.', components: [] });
         }
 
-        // --- [Direct Mode: Select Who To Send] ---
         if (interaction.customId === 'dm_target_select') {
             await interaction.update({ content: `🚀 Sending to ${selectedUsers.size} users...`, components: [] });
 
@@ -1056,7 +1116,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.followUp({ content: `✅ DM sent to **${successCount}/${selectedUsers.size}** users.`, ephemeral: true }).catch(() => {});
         }
 
-        // --- [Everyone Mode: Select Who NOT To Send] ---
         else if (interaction.customId === 'dm_exclude_select') {
             await interaction.update({ content: `🚀 Sending to everyone except ${selectedUsers.size} users...`, components: [] });
 
@@ -1096,7 +1155,6 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'check') {
             const { guild } = interaction;
 
-            // 1. Fetch all members for accurate presence data
             const members = await guild.members.fetch().catch(() => null);
             const totalMembers  = guild.memberCount;
             const botCount      = members ? members.filter(m => m.user.bot).size : 0;
@@ -1106,14 +1164,12 @@ client.on('interactionCreate', async (interaction) => {
             const dndMembers    = members ? members.filter(m => m.presence?.status === 'dnd').size : 0;
             const offlineMembers = Math.max(0, humanCount - onlineMembers - idleMembers - dndMembers);
 
-            // 2. Server info
             const channelCount = guild.channels.cache.size;
             const roleCount    = guild.roles.cache.size;
             const boostCount   = guild.premiumSubscriptionCount || 0;
             const boostTier    = guild.premiumTier || 0;
             const createdAt    = `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>`;
 
-            // 3. Recent violations from Audit Log (Timeout=24, Kick=20, Ban=22)
             const auditLogs = await guild.fetchAuditLogs({ limit: 10 }).catch(() => null);
             const violations = auditLogs?.entries
                 .filter(entry => [24, 20, 22].includes(entry.action))
@@ -1127,7 +1183,6 @@ client.on('interactionCreate', async (interaction) => {
                 })
                 .join('\n') || '✅ No recent violations found.';
 
-            // 4. Server health checks — flags any issues
             const issues = [];
             if (boostTier === 0)                                    issues.push('⚠️ No active Server Boost');
             if (guild.verificationLevel === 0)                      issues.push('⚠️ Verification level is NONE — low security');
@@ -1155,7 +1210,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         // ============================================================
-        // ✅ [NEW - Part 1] /edit — Show modal BEFORE deferReply
+        // ✅ /edit — Show modal BEFORE deferReply
         // ============================================================
         if (commandName === 'edit') {
             const link = options.getString('message_link');
@@ -1192,6 +1247,60 @@ client.on('interactionCreate', async (interaction) => {
                 console.error('❌ /edit modal error:', e);
                 return await interaction.reply({ content: '❌ Message not found. Check link.', ephemeral: true });
             }
+        }
+
+        // ============================================================
+        // ✅ [NEW] /setup-form — Works in server channel OR user DM
+        // Must be before deferReply (reply with visible components)
+        // ============================================================
+        if (commandName === 'setup-form') {
+            // ── Manual permission check (Admin or Owner only) ──
+            const isAdmin = interaction.guild
+                ? interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)
+                : interaction.user.id === CONFIG.OWNER_ID;
+
+            if (!isAdmin) {
+                return await interaction.reply({ content: '❌ You need Administrator permission to use this command.', ephemeral: true });
+            }
+
+            const btnName       = options.getString('button_name');
+            const btnColor      = options.getString('button_color');
+            const targetChannel = options.getChannel('target_channel');
+            const sendToDM      = options.getBoolean('send_to_dm') || false;
+            const dmUser        = options.getUser('dm_user');
+
+            const button = new ButtonBuilder()
+                .setCustomId(`form_start_${targetChannel.id}`)
+                .setLabel(btnName)
+                .setStyle(ButtonStyle[btnColor]);
+
+            const row = new ActionRowBuilder().addComponents(button);
+
+            // ── Mode 1: Send button to a user's DM ──
+            if (sendToDM) {
+                if (!dmUser) {
+                    return await interaction.reply({ content: '❌ You must select a user in `dm_user` when `send_to_dm` is true.', ephemeral: true });
+                }
+                try {
+                    const dmChannel = await dmUser.createDM();
+                    await dmChannel.send({
+                        content: `📋 You have received a form. Click the button below to submit:`,
+                        components: [row]
+                    });
+                    return await interaction.reply({
+                        content: `✅ Form button sent to **${dmUser.username}**'s DM! Results will be sent to <#${targetChannel.id}>.`,
+                        ephemeral: true
+                    });
+                } catch (e) {
+                    return await interaction.reply({ content: `❌ Could not DM **${dmUser.username}**. They may have DMs disabled.`, ephemeral: true });
+                }
+            }
+
+            // ── Mode 2: Send button in the current channel ──
+            return await interaction.reply({
+                content: `✅ Your custom form button is ready! Results will be sent to <#${targetChannel.id}>.`,
+                components: [row]
+            });
         }
 
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
@@ -1407,9 +1516,6 @@ client.on('interactionCreate', async (interaction) => {
 
             // ============================================================
             // ✅ /dm Command Handler
-            // Mode 1: user option      → direct send, no UI
-            // Mode 2: no user          → Snippet 1: dm_target_select (Select Who To Send)
-            // Mode 3: everyone=true    → Snippet 2: dm_exclude_select (Select Who NOT To Send)
             // ============================================================
             if (commandName === 'dm') {
                 const targetUser     = options.getUser('user');
@@ -1429,7 +1535,6 @@ client.on('interactionCreate', async (interaction) => {
                     return await interaction.editReply({ content: '❌ You must provide a **message** or an **image** to send.' });
                 }
 
-                // --- Repeating DM (ads system) ---
                 if (repeatInterval > 0) {
                     const adKey = `dmad_${Date.now()}`;
                     const dmAd = {
@@ -1457,7 +1562,6 @@ client.on('interactionCreate', async (interaction) => {
 
                 const settings = { style, delay, delAfter, msgContent, caption, imageUrl: image?.url || null, color, reactionEmoji, showDeleteButton };
 
-                // ── Mode 1: Direct user — send immediately, no selector UI ──
                 if (targetUser && !isEveryone) {
                     await interaction.editReply({ content: `✅ Scheduling DM to **${targetUser.username}** in ${delay} min...` });
                     setTimeout(async () => {
@@ -1467,12 +1571,9 @@ client.on('interactionCreate', async (interaction) => {
                     return;
                 }
 
-                // Save settings so the select menu handler can retrieve them
                 dmSettingsStorage.set(interaction.user.id, settings);
 
-                // ── Mode 2: No user, everyone=false → Snippet 1 (Direct Mode selector) ──
                 if (!isEveryone) {
-                    // --- [Direct Mode: Select Who To Send] ---
                     const userSelector = new UserSelectMenuBuilder()
                         .setCustomId('dm_target_select')
                         .setPlaceholder('✅ Select the users you want to message')
@@ -1487,8 +1588,6 @@ client.on('interactionCreate', async (interaction) => {
                     });
                 }
 
-                // ── Mode 3: everyone=true → Snippet 2 (Everyone Mode exclude selector) ──
-                // --- [Everyone Mode: Select Who NOT To Send] ---
                 const exceptionSelector = new UserSelectMenuBuilder()
                     .setCustomId('dm_exclude_select')
                     .setPlaceholder('🚫 Select users to EXCLUDE (No Send)')
@@ -1517,7 +1616,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     } 
     // ============================================================
-    // ✅ [NEW] dm_send_to_all Button — Everyone mode with no exclusions
+    // ✅ dm_send_to_all Button
     // ============================================================
     else if (interaction.isButton() && interaction.customId === 'dm_send_to_all') {
         const settings = dmSettingsStorage.get(interaction.user.id);
