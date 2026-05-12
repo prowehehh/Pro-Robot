@@ -2,8 +2,8 @@ const {
     Client, GatewayIntentBits, Partials, PermissionsBitField, EmbedBuilder, 
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
     ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent,
-    UserSelectMenuBuilder,
-    StringSelectMenuBuilder // ✅ [NEW - Form Builder] Added for select-menu style forms
+    UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType,
+    StringSelectMenuBuilder
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -55,7 +55,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: '🤖 | Version: 4.7',
+            state: '🤖 | Version: 4.6',
             type: 4
         }]
     }
@@ -77,13 +77,7 @@ const CONFIG = {
 const adsStorage = new Map();
 const warnStorage = new Map();
 const dmAdsStorage = new Map();
-const dmSettingsStorage = new Map();
-
-// ============================================================
-// ✅ [NEW - Form Builder] Storage Maps
-// ============================================================
-const formStorage        = new Map(); // formId → full config (active forms)
-const formBuilderStorage = new Map(); // userId → pending builder config (setup step)
+const dmSettingsStorage = new Map(); // ✅ [NEW - Part 4] Stores /dm settings between command → select menu
 
 const pendingUpdates = new Map(); 
 const ADMIN_PASSWORD = "Pro@Robot510";
@@ -102,7 +96,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('📥 INCOMING PRIVATE SIGNAL')
             .addFields(
-                { name: 'Sender', value: `${username}`, inline: true },
+                { name: 'Sender', value: `<@${userId}>`, inline: true },
                 { name: 'User ID', value: `${userId}`, inline: true },
                 { name: 'Message Content', value: content || '[Empty]', inline: false }
             )
@@ -113,7 +107,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('🖼️ PRIVATE MEDIA DETECTED')
             .addFields(
-                { name: 'Sender', value: `${username}`, inline: true },
+                { name: 'Sender', value: `<@${userId}>`, inline: true },
                 { name: 'Status', value: 'Attachment Received', inline: true },
                 { name: 'Content', value: '(The image will be displayed below)', inline: false }
             )
@@ -125,7 +119,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('🤖 AI AUTOMATIC RESPONSE')
             .addFields(
-                { name: 'Target User', value: `${username}`, inline: true },
+                { name: 'Target User', value: `<@${userId}>`, inline: true },
                 { name: 'AI Response', value: content || '[Empty]', inline: false }
             )
             .setColor('#3498db')
@@ -135,7 +129,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('⚠️ DM SYSTEM ALERT')
             .addFields(
-                { name: 'User', value: `${username}`, inline: true },
+                { name: 'User', value: `<@${userId}>`, inline: true },
                 { name: 'Activity', value: content || 'Multiple messages detected.', inline: false }
             )
             .setColor('#e74c3c')
@@ -145,7 +139,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('📤 DM Sent (Bot → User)')
             .addFields(
-                { name: 'Target', value: `${username} \`(${userId})\``, inline: true },
+                { name: 'Target', value: `<@${userId}>`, inline: true },
                 { name: 'Content', value: content || '[Empty]', inline: false }
             )
             .setColor('#2ecc71')
@@ -247,7 +241,7 @@ async function sendDetailedLog(guild, title, details, color = '#3498db') {
     setTimeout(async () => {
         const fetchedLogs = await guild.fetchAuditLogs({ limit: 1 }).catch(() => null);
         const logEntry = fetchedLogs?.entries.first();
-        const executor = logEntry ? logEntry.executor.tag : "System / Unknown";
+        const executor = logEntry ? `<@${logEntry.executor.id}>` : "System / Unknown";
 
         const logEmbed = new EmbedBuilder()
             .setTitle(`📡 RADAR: ${title}`)
@@ -273,27 +267,31 @@ const generalLinkRegex = /(https?:\/\/[^\s]+)/gi;
 
 // ============================================================
 // ✅ [NEW - Part 3] Smart Sending Function
+// Sends DM and tracks message link back to initiator
 // ============================================================
 const buildDMPayloadGlobal = (userId, settings) => {
-    const { style, msgContent, caption, imageUrl, color, delAfter } = settings;
+    const { style, msgContent, caption, imageUrl, color, showDeleteButton } = settings;
 
-    const deleteRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`delete_dm_${userId}`)
-            .setLabel('Delete Message 🗑️')
-            .setStyle(ButtonStyle.Danger)
-    );
+    const components = [];
+    if (showDeleteButton) {
+        components.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`delete_dm_${userId}`)
+                .setLabel('Delete Message 🗑️')
+                .setStyle(ButtonStyle.Danger)
+        ));
+    }
 
     if (style === 'embed') {
         const embed = new EmbedBuilder().setColor(color || '#3498db').setTimestamp();
         if (msgContent) embed.setDescription(msgContent);
         if (caption)    embed.setTitle(caption);
         if (imageUrl)   embed.setImage(imageUrl);
-        return { embeds: [embed], components: [deleteRow] };
+        return { embeds: [embed], components };
     } else {
         const payload = {
             content: [msgContent, caption].filter(Boolean).join('\n') || ' ',
-            components: [deleteRow]
+            components
         };
         if (imageUrl) payload.files = [imageUrl];
         return payload;
@@ -306,10 +304,20 @@ const executeSmartSend = async (user, initiator, settings) => {
         const payload = buildDMPayloadGlobal(user.id, settings);
         const sent = await dmChannel.send(payload);
 
+        // ✅ Tracking link — sent to DM log channel only
         const msgLink = `https://discord.com/channels/@me/${sent.channelId}/${sent.id}`;
-        await initiator.send({
-            content: `🔗 **New DM Sent to ${user.username}**\nLink: ${msgLink}`
-        }).catch(() => {});
+        const logCh = client.channels.cache.get(CONFIG.DM_LOG_CH);
+        if (logCh) {
+            await logCh.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor('#2b2d31')
+                        .setTitle('🔗 DM Tracking Link')
+                        .setDescription(`**Sent to:** ${user.username}\n\n${msgLink}`)
+                        .setTimestamp()
+                ]
+            }).catch(() => {});
+        }
 
         if (settings.reactionEmoji) {
             await sent.react(settings.reactionEmoji).catch(() => {});
@@ -327,82 +335,26 @@ const executeSmartSend = async (user, initiator, settings) => {
     }
 };
 
-// ============================================================
-// ✅ [NEW - Form Builder] Helper: Send Form Result to Channel & DMs
-// ============================================================
-async function sendFormResult(config, interaction, data) {
-    const resultsCh = client.channels.cache.get(config.resultsChannelId);
-    if (!resultsCh) return;
+// Function to execute the sending
+async function sendAnonymousDM(targetUser, initiator, messageContent) {
+    try {
+        // 1. Send to the target (The user sees ONLY the bot)
+        const sent = await targetUser.send({ content: messageContent });
 
-    const pingText = config.pingSubmitter ? `<@${interaction.user.id}>` : '';
+        // 2. Generate the tracking link
+        const trackingLink = `https://discord.com/channels/@me/${sent.channelId}/${sent.id}`;
 
-    let sent;
-    if (config.messageStyle === 'embed') {
-        const embed = new EmbedBuilder()
-            .setColor(config.embedColor || '#5865F2')
-            .setTitle(config.embedTitle || '📥 New Submission')
-            .setTimestamp();
-
-        embed.addFields({ name: '👤 Submitted by', value: `<@${interaction.user.id}>`, inline: true });
-
-        if (data.fields) {
-            for (let i = 0; i < config.fields.length; i++) {
-                embed.addFields({
-                    name: config.fields[i].name,
-                    value: data.fields[i] || '—',
-                    inline: false
-                });
-            }
-        } else if (data.selected) {
-            embed.addFields({ name: '📋 Selection', value: data.selected, inline: false });
-        } else if (data.note) {
-            embed.addFields({ name: '📝 Note', value: data.note, inline: false });
-        }
-
-        sent = await resultsCh.send({
-            content: pingText || undefined,
-            embeds: [embed]
+        // 3. Send the link to YOU in a separate Box (Embed)
+        await initiator.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setColor('#2b2d31')
+                    .setTitle('🔗 Tracking Link Generated')
+                    .setDescription(`**Sent to:** ${targetUser.username}\n\n${trackingLink}`)
+            ]
         });
-
-    } else {
-        const lines = [
-            `📥 **New Submission** from ${pingText || `\`${interaction.user.username}\``}:`
-        ];
-        if (data.fields) {
-            for (let i = 0; i < config.fields.length; i++) {
-                lines.push(`**${config.fields[i].name}:** ${data.fields[i] || '—'}`);
-            }
-        } else if (data.selected) {
-            lines.push(`**Selection:** ${data.selected}`);
-        } else if (data.note) {
-            lines.push(`**Note:** ${data.note}`);
-        }
-        sent = await resultsCh.send(lines.join('\n'));
-    }
-
-    if (sent && config.deleteAfter > 0) {
-        setTimeout(() => sent.delete().catch(() => {}), config.deleteAfter * 60000);
-    }
-
-    // Handle extra DM distribution
-    if (config.sendTo === 'dm_submitter') {
-        await interaction.user.send({
-            content: `✅ Your submission was received in **${interaction.guild?.name || 'the server'}**!`
-        }).catch(() => {});
-    } else if (config.sendTo === 'dm_everyone') {
-        const guild = interaction.guild;
-        if (guild) {
-            const members = await guild.members.fetch().catch(() => null);
-            if (members) {
-                for (const [, member] of members) {
-                    if (member.user.bot) continue;
-                    await member.user.send({
-                        content: `📥 New form submission received in **${guild.name}**!\nCheck <#${config.resultsChannelId}> for details.`
-                    }).catch(() => {});
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-            }
-        }
+    } catch (err) {
+        console.log(`Could not DM ${targetUser.tag}`);
     }
 }
 
@@ -419,9 +371,18 @@ const commands = [
     new SlashCommandBuilder().setName('slash_control').setDescription('Restrict a command to a specific role').addStringOption(o => o.setName('command_name').setDescription('The command to restrict').setRequired(true)).addRoleOption(o => o.setName('allowed_role').setDescription('The role allowed to use this command').setRequired(true)),
     new SlashCommandBuilder()
         .setName('reaction')
-        .setDescription('Add a reaction to a specific message using its link')
-        .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
-        .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true)),
+        .setDescription('Manage reactions on messages')
+        .addSubcommand(sub =>
+            sub.setName('add')
+                .setDescription('Add a reaction to a specific message using its link')
+                .addStringOption(o => o.setName('link').setDescription('The message link').setRequired(true))
+                .addStringOption(o => o.setName('emoji').setDescription('The emoji to react with').setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('remove')
+                .setDescription('Remove a specific reaction from a message using its link')
+                .addStringOption(o => o.setName('message_link').setDescription('The link of the message').setRequired(true))
+        ),
     new SlashCommandBuilder()
         .setName('picture')
         .setDescription('Send pictures with auto-send and auto-delete timers')
@@ -432,7 +393,7 @@ const commands = [
         .addStringOption(o => o.setName('caption').setDescription('Add a text description with the image').setRequired(false)),
 
     // ============================================================
-    // ✅ /dm Command
+    // ✅ /dm Command — user option + everyone + UserSelectMenu
     // ============================================================
     new SlashCommandBuilder()
         .setName('dm')
@@ -447,75 +408,48 @@ const commands = [
         .addStringOption(o => o.setName('caption').setDescription('Caption text for the image').setRequired(false))
         .addStringOption(o => o.setName('color').setDescription('Embed box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'},{name:'Gold',value:'#f1c40f'}).setRequired(false))
         .addIntegerOption(o => o.setName('repeat_interval').setDescription('Repeat DM every X minutes (0 = no repeat)').setRequired(false))
-        .addStringOption(o => o.setName('reaction').setDescription('Emoji to auto-react on the DM message').setRequired(false)),
+        .addStringOption(o => o.setName('reaction').setDescription('Emoji to auto-react on the DM message').setRequired(false))
+        .addBooleanOption(o => o.setName('delete_button').setDescription('Show a red Delete button to the recipient (default: off)').setRequired(false)),
 
     // ============================================================
-    // ✅ /edit Command
+    // ✅ /edit Command — Now opens a modal with old content pre-filled
     // ============================================================
     new SlashCommandBuilder()
         .setName('edit')
         .setDescription('Edit a previously sent bot message using its link')
         .addStringOption(o => o.setName('message_link').setDescription('The full message link to edit').setRequired(true)),
 
-    // ============================================================
-    // ✅ [NEW - Form Builder] /setup-form Command
-    // Full control over button, fields, message style, delivery
-    // ============================================================
     new SlashCommandBuilder()
-        .setName('setup-form')
-        .setDescription('Create a fully customized submission form with total control')
+        .setName('delete')
+        .setDescription('Delete a message using its link')
+        .addStringOption(opt => 
+            opt.setName('message_link')
+               .setDescription('Paste the message link here')
+               .setRequired(true)
+        ),
 
-        // ── Button ──
-        .addStringOption(o => o.setName('button_name').setDescription('Text shown on the button').setRequired(true))
-        .addStringOption(o => o.setName('button_color').setDescription('Button color').setRequired(true)
-            .addChoices(
-                { name: '🔵 Blue',  value: 'Primary'   },
-                { name: '🟢 Green', value: 'Success'   },
-                { name: '⚫ Grey',  value: 'Secondary' },
-                { name: '🔴 Red',   value: 'Danger'    }
-            ))
+    new SlashCommandBuilder()
+        .setName('check')
+        .setDescription('Get a full private status report of the server'),
 
-        // ── Fields ──
-        .addIntegerOption(o => o.setName('fields_count').setDescription('Number of input fields (1-5). Add * at end of name = required').setRequired(true).setMinValue(1).setMaxValue(5))
+    // ============================================================
+    // ✅ Message Context Menu Commands (Apps Menu)
+    // ============================================================
+    new ContextMenuCommandBuilder()
+        .setName('Delete Message')
+        .setType(ApplicationCommandType.Message),
 
-        // ── Message ──
-        .addStringOption(o => o.setName('message_style').setDescription('How the result message looks').setRequired(true)
-            .addChoices(
-                { name: 'Box (Embed)', value: 'embed'  },
-                { name: 'Normal Text', value: 'normal' }
-            ))
-        .addStringOption(o => o.setName('embed_color').setDescription('Color of the result embed box').setRequired(false)
-            .addChoices(
-                { name: 'Blue',   value: '#3498db' },
-                { name: 'Red',    value: '#e74c3c' },
-                { name: 'Green',  value: '#2ecc71' },
-                { name: 'Gold',   value: '#f1c40f' },
-                { name: 'Purple', value: '#9b59b6' }
-            ))
-        .addChannelOption(o => o.setName('results_channel').setDescription('Channel where submissions are sent').setRequired(true).addChannelTypes(ChannelType.GuildText))
-        .addIntegerOption(o => o.setName('delete_after').setDescription('Auto-delete result message after X minutes (0 = never)').setRequired(false))
-        .addStringOption(o => o.setName('send_to').setDescription('Who receives the result').setRequired(true)
-            .addChoices(
-                { name: 'Channel only',       value: 'channel'      },
-                { name: 'DM the submitter',   value: 'dm_submitter' },
-                { name: 'DM everyone',        value: 'dm_everyone'  }
-            ))
-        .addBooleanOption(o => o.setName('ping_submitter').setDescription('Ping the submitter in the result message? (default: yes)').setRequired(false))
+    new ContextMenuCommandBuilder()
+        .setName('Edit Message')
+        .setType(ApplicationCommandType.Message),
 
-        // ── Style / Display ──
-        .addStringOption(o => o.setName('form_type').setDescription('How users fill the form').setRequired(true)
-            .addChoices(
-                { name: '📝 Modal Popup (text fields)', value: 'modal'     },
-                { name: '📋 Select Menu (pick option)', value: 'select'    },
-                { name: '👁️ Click only (private reply)', value: 'ephemeral' }
-            ))
+    new ContextMenuCommandBuilder()
+        .setName('Add Reaction')
+        .setType(ApplicationCommandType.Message),
 
-        // ── Optional extras ──
-        .addChannelOption(o => o.setName('post_channel').setDescription('Channel to post the button (default: current channel)').setRequired(false).addChannelTypes(ChannelType.GuildText))
-        .addStringOption(o => o.setName('form_title').setDescription('Title shown on the modal or select menu').setRequired(false))
-        .addStringOption(o => o.setName('embed_title').setDescription('Title of the result embed').setRequired(false))
-        .addStringOption(o => o.setName('button_emoji').setDescription('Emoji on the button (e.g: 📝)').setRequired(false))
-        .addStringOption(o => o.setName('success_message').setDescription('Private reply shown to user after submitting').setRequired(false)),
+    new ContextMenuCommandBuilder()
+        .setName('Remove Reaction')
+        .setType(ApplicationCommandType.Message),
 
 ].map(c => c.toJSON());
 
@@ -869,7 +803,91 @@ client.on('messageCreate', async (message) => {
 client.on('interactionCreate', async (interaction) => {
 
     // ============================================================
-    // ✅ Delete DM Button
+    // ✅ Message Context Menu Commands (Apps Menu)
+    // ============================================================
+    if (interaction.isMessageContextMenuCommand()) {
+        const targetMessage = interaction.targetMessage;
+
+        // --- Delete Message (Apps Menu) ---
+        if (interaction.commandName === 'Delete Message') {
+            try {
+                await targetMessage.delete();
+                await interaction.reply({ content: '✅ Message deleted successfully!', ephemeral: true });
+            } catch (error) {
+                let errorMessage = '❌ Could not delete the message.';
+                if (error.code === 50013) errorMessage = "❌ I don't have permission to delete this message (Need 'Manage Messages').";
+                if (error.code === 10008) errorMessage = '❌ Message not found. It might be already deleted.';
+                if (error.code === 50005) errorMessage = '❌ I cannot delete someone else\'s message in DMs!';
+                await interaction.reply({ content: errorMessage, ephemeral: true });
+            }
+            return;
+        }
+
+        // --- Edit Message (Apps Menu) ---
+        if (interaction.commandName === 'Edit Message') {
+            const oldText = targetMessage.embeds.length > 0
+                ? (targetMessage.embeds[0].description || '')
+                : (targetMessage.content || '');
+
+            const modal = new ModalBuilder()
+                .setCustomId(`smart_edit_${targetMessage.channelId}_${targetMessage.id}`)
+                .setTitle('Edit Message');
+
+            const input = new TextInputBuilder()
+                .setCustomId('updated_text')
+                .setLabel('Edit Content:')
+                .setStyle(TextInputStyle.Paragraph)
+                .setValue(oldText)
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return await interaction.showModal(modal);
+        }
+
+        // --- Add Reaction (Apps Menu) ---
+        if (interaction.commandName === 'Add Reaction') {
+            const modal = new ModalBuilder()
+                .setCustomId(`reaction_ctx_${targetMessage.channelId}_${targetMessage.id}`)
+                .setTitle('Add Reaction');
+
+            const input = new TextInputBuilder()
+                .setCustomId('reaction_emoji')
+                .setLabel('Emoji to react with:')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return await interaction.showModal(modal);
+        }
+
+        // --- Remove Reaction (Apps Menu) ---
+        if (interaction.commandName === 'Remove Reaction') {
+            const reactions = targetMessage.reactions.cache;
+            if (reactions.size === 0) {
+                return await interaction.reply({ content: '❌ No reactions found on this message.', ephemeral: true });
+            }
+            const selectOptions = reactions.map(r => ({
+                label: `Remove ${r.emoji.name}`,
+                description: `Count: ${r.count}`,
+                value: r.emoji.id || r.emoji.name,
+                emoji: r.emoji.id ? { id: r.emoji.id } : { name: r.emoji.name }
+            }));
+            const selector = new StringSelectMenuBuilder()
+                .setCustomId(`delete_reaction_${targetMessage.channelId}_${targetMessage.id}`)
+                .setPlaceholder('Choose the reaction to remove...')
+                .addOptions(selectOptions);
+            return await interaction.reply({
+                content: '🔍 Select the reaction you want to remove:',
+                components: [new ActionRowBuilder().addComponents(selector)],
+                ephemeral: true
+            });
+        }
+
+        return;
+    }
+
+    // ============================================================
+    // ✅ [UPDATED] Delete DM Button — Logs who deleted
     // ============================================================
     if (interaction.isButton() && interaction.customId.startsWith('delete_dm_')) {
         const targetId = interaction.customId.replace('delete_dm_', '');
@@ -902,67 +920,51 @@ client.on('interactionCreate', async (interaction) => {
         return await interaction.showModal(modal);
     }
 
-    // ============================================================
-    // ✅ [NEW - Form Builder] Button: Open the form (user-facing)
-    // When someone clicks the button created by /setup-form
-    // ============================================================
-    if (interaction.isButton() && interaction.customId.startsWith('form_open_')) {
-        const formId = interaction.customId.replace('form_open_', '');
-        const config = formStorage.get(formId);
-
-        if (!config) {
-            return await interaction.reply({ content: '❌ This form is no longer active.', ephemeral: true });
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('reaction_ctx_')) {
+        const parts = interaction.customId.split('_');
+        const chId  = parts[2];
+        const msgId = parts[3];
+        const emoji = interaction.fields.getTextInputValue('reaction_emoji');
+        try {
+            const targetChannel = await client.channels.fetch(chId).catch(() => null);
+            const targetMsg = await targetChannel.messages.fetch(msgId).catch(() => null);
+            await targetMsg.react(emoji);
+            await interaction.reply({ content: `✅ Reacted with ${emoji}!`, ephemeral: true });
+        } catch (e) {
+            await interaction.reply({ content: '❌ Failed to add reaction. Make sure the emoji is valid.', ephemeral: true });
         }
+        return;
+    }
 
-        // ── Modal Popup type ──
-        if (config.formType === 'modal') {
-            const modal = new ModalBuilder()
-                .setCustomId(`form_submit_${formId}`)
-                .setTitle(config.formTitle || 'Submission Form');
-
-            for (let i = 0; i < config.fields.length; i++) {
-                const f = config.fields[i];
-                const input = new TextInputBuilder()
-                    .setCustomId(`field_${i}`)
-                    .setLabel(f.name)
-                    .setStyle(f.paragraph ? TextInputStyle.Paragraph : TextInputStyle.Short)
-                    .setRequired(f.required)
-                    .setPlaceholder(f.required ? 'Required' : 'Optional');
-                modal.addComponents(new ActionRowBuilder().addComponents(input));
+    // ============================================================
+    // ✅ Remove Reaction — StringSelectMenu Handler
+    // ============================================================
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('delete_reaction_')) {
+        const parts    = interaction.customId.split('_');
+        const chId     = parts[2];
+        const msgId    = parts[3];
+        const emojiVal = interaction.values[0];
+        try {
+            const targetChannel = await client.channels.fetch(chId).catch(() => null);
+            const targetMsg     = await targetChannel.messages.fetch(msgId).catch(() => null);
+            const reaction      = targetMsg.reactions.cache.get(emojiVal);
+            if (reaction) {
+                const isDM = targetChannel.type === ChannelType.DM;
+                if (isDM) {
+                    // In DMs — can only remove bot's own reaction
+                    await reaction.users.remove(client.user.id);
+                } else {
+                    // In server — remove all users' reactions for this emoji
+                    await reaction.remove();
+                }
+                await interaction.update({ content: `✅ Reaction removed successfully!`, components: [] });
+            } else {
+                await interaction.update({ content: '❌ Reaction not found.', components: [] });
             }
-
-            return await interaction.showModal(modal);
+        } catch (e) {
+            console.error(e);
+            await interaction.reply({ content: '❌ Failed to remove reaction.', ephemeral: true });
         }
-
-        // ── Select Menu type ──
-        if (config.formType === 'select') {
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId(`form_select_${formId}`)
-                .setPlaceholder(config.formTitle || 'Choose an option...')
-                .addOptions(config.fields.map((f, i) => ({
-                    label: f.name,
-                    value: `option_${i}`,
-                    description: f.required ? '⭐ Main option' : 'Optional choice'
-                })));
-
-            const row = new ActionRowBuilder().addComponents(selectMenu);
-
-            return await interaction.reply({
-                content: `📋 **${config.formTitle || 'Form'}** — please select an option below:`,
-                components: [row],
-                ephemeral: true
-            });
-        }
-
-        // ── Click Only / Ephemeral type ──
-        if (config.formType === 'ephemeral') {
-            await sendFormResult(config, interaction, { note: 'User clicked the button (no fields).' });
-            return await interaction.reply({
-                content: config.successMessage || '✅ Your request has been received! The admin will follow up shortly.',
-                ephemeral: true
-            });
-        }
-
         return;
     }
 
@@ -990,10 +992,10 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ✅ smart_edit Modal Submit Handler
+    // ✅ [NEW - Part 1] smart_edit Modal Submit Handler
     // ============================================================
     if (interaction.isModalSubmit() && interaction.customId.startsWith('smart_edit_')) {
-        const parts   = interaction.customId.split('_');
+        const parts   = interaction.customId.split('_'); // smart_edit_{chId}_{msgId}
         const chId    = parts[2];
         const msgId   = parts[3];
         const newText = interaction.fields.getTextInputValue('updated_text');
@@ -1027,148 +1029,19 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ✅ [NEW - Form Builder] Step 2 Modal Submit: Field Configuration
-    // After /setup-form, user fills in field names in a modal
-    // ============================================================
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('form_config_fields_')) {
-        const userId = interaction.customId.replace('form_config_fields_', '');
-        const config = formBuilderStorage.get(userId);
-
-        if (!config) {
-            return await interaction.reply({ content: '❌ Session expired. Please run /setup-form again.', ephemeral: true });
-        }
-
-        // Parse field names — ending with * means required, otherwise optional
-        // Ending with !! means paragraph (multi-line) style
-        const fields = [];
-        for (let i = 1; i <= config.fieldsCount; i++) {
-            let fieldValue = '';
-            try { fieldValue = interaction.fields.getTextInputValue(`field_${i}`); } catch { continue; }
-
-            const isParagraph = fieldValue.endsWith('!!');
-            const tempValue   = isParagraph ? fieldValue.slice(0, -2).trim() : fieldValue;
-            const isRequired  = tempValue.endsWith('*');
-            const fieldName   = isRequired ? tempValue.slice(0, -1).trim() : tempValue.trim();
-
-            fields.push({ name: fieldName || `Field ${i}`, required: isRequired, paragraph: isParagraph });
-        }
-
-        config.fields = fields;
-
-        // Generate unique form ID
-        const formId = `form_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        config.formId = formId;
-        formStorage.set(formId, config);
-        formBuilderStorage.delete(userId);
-
-        // Build the button
-        const btn = new ButtonBuilder()
-            .setCustomId(`form_open_${formId}`)
-            .setLabel(config.buttonName)
-            .setStyle(ButtonStyle[config.buttonColor]);
-
-        if (config.buttonEmoji) {
-            try { btn.setEmoji(config.buttonEmoji); } catch {}
-        }
-
-        const row = new ActionRowBuilder().addComponents(btn);
-
-        // Post the button to target channel
-        const postChannel = client.channels.cache.get(config.postChannelId);
-        if (!postChannel) {
-            return await interaction.reply({ content: '❌ Post channel not found. Please check permissions.', ephemeral: true });
-        }
-
-        await postChannel.send({ components: [row] });
-
-        // Preview embed (ephemeral confirmation to admin)
-        const fieldsPreview = fields.map((f, i) =>
-            `**${i + 1}.** ${f.name} ${f.required ? '`(required)`' : '`(optional)`'}${f.paragraph ? ' `[multi-line]`' : ''}`
-        ).join('\n');
-
-        const previewEmbed = new EmbedBuilder()
-            .setTitle('✅ Form Created Successfully!')
-            .setColor('#2ecc71')
-            .addFields(
-                { name: '🔘 Button',       value: `\`${config.buttonName}\` — ${config.buttonColor}`,  inline: true  },
-                { name: '📋 Form Type',    value: config.formType,                                       inline: true  },
-                { name: '📤 Results To',   value: `<#${config.resultsChannelId}>`,                       inline: true  },
-                { name: '📨 Send To',      value: config.sendTo,                                         inline: true  },
-                { name: '🎨 Style',        value: config.messageStyle,                                   inline: true  },
-                { name: '🗑️ Delete After', value: config.deleteAfter > 0 ? `${config.deleteAfter} min` : 'Never', inline: true },
-                { name: `📝 Fields (${fields.length})`, value: fieldsPreview || 'None', inline: false }
-            )
-            .setFooter({ text: `Form ID: ${formId}` })
-            .setTimestamp();
-
-        return await interaction.reply({ embeds: [previewEmbed], ephemeral: true });
-    }
-
-    // ============================================================
-    // ✅ [NEW - Form Builder] Form Modal Submit (user fills in fields)
-    // ============================================================
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('form_submit_')) {
-        const formId = interaction.customId.replace('form_submit_', '');
-        const config = formStorage.get(formId);
-
-        if (!config) {
-            return await interaction.reply({ content: '❌ This form is no longer active.', ephemeral: true });
-        }
-
-        // Collect field values
-        const fieldValues = [];
-        for (let i = 0; i < config.fields.length; i++) {
-            try {
-                fieldValues[i] = interaction.fields.getTextInputValue(`field_${i}`) || '—';
-            } catch {
-                fieldValues[i] = '—';
-            }
-        }
-
-        await sendFormResult(config, interaction, { fields: fieldValues });
-
-        return await interaction.reply({
-            content: config.successMessage || '✅ Your submission has been sent successfully!',
-            ephemeral: true
-        });
-    }
-
-    // ============================================================
-    // ✅ [NEW - Form Builder] String Select Menu Submit (select type form)
-    // ============================================================
-    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('form_select_')) {
-        const formId = interaction.customId.replace('form_select_', '');
-        const config = formStorage.get(formId);
-
-        if (!config) {
-            return await interaction.reply({ content: '❌ This form is no longer active.', ephemeral: true });
-        }
-
-        const selectedValues = interaction.values;
-        const selectedLabels = selectedValues.map(v => {
-            const idx = parseInt(v.replace('option_', ''));
-            return config.fields[idx]?.name || v;
-        });
-
-        await sendFormResult(config, interaction, { selected: selectedLabels.join(', ') });
-
-        return await interaction.reply({
-            content: config.successMessage || `✅ You selected: **${selectedLabels.join(', ')}** — submitted successfully!`,
-            ephemeral: true
-        });
-    }
-
-    // ============================================================
-    // ✅ User Select Menu Handler (DM system)
+    // ✅ [NEW - Part 2 & 3] User Select Menu Handler
+    // Snippet 3 — Handles dm_target_select (Direct Mode) &
+    //             dm_exclude_select (Everyone Mode)
     // ============================================================
     if (interaction.isUserSelectMenu()) {
-        const selectedUsers = interaction.users;
+        const selectedUsers = interaction.users; // دول الناس اللي أنت علمت عليهم صح (Checked)
         const settings      = dmSettingsStorage.get(interaction.user.id);
 
         if (!settings) {
             return await interaction.update({ content: '❌ Session expired. Please run /dm again.', components: [] });
         }
 
+        // --- [Direct Mode: Select Who To Send] ---
         if (interaction.customId === 'dm_target_select') {
             await interaction.update({ content: `🚀 Sending to ${selectedUsers.size} users...`, components: [] });
 
@@ -1183,6 +1056,7 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.followUp({ content: `✅ DM sent to **${successCount}/${selectedUsers.size}** users.`, ephemeral: true }).catch(() => {});
         }
 
+        // --- [Everyone Mode: Select Who NOT To Send] ---
         else if (interaction.customId === 'dm_exclude_select') {
             await interaction.update({ content: `🚀 Sending to everyone except ${selectedUsers.size} users...`, components: [] });
 
@@ -1217,7 +1091,71 @@ client.on('interactionCreate', async (interaction) => {
         const { commandName, options, guild, channel } = interaction;
 
         // ============================================================
-        // ✅ /edit — Show modal BEFORE deferReply
+        // ✅ /check — Full Server Status Report (Ephemeral)
+        // ============================================================
+        if (commandName === 'check') {
+            const { guild } = interaction;
+
+            // 1. Fetch all members for accurate presence data
+            const members = await guild.members.fetch().catch(() => null);
+            const totalMembers  = guild.memberCount;
+            const botCount      = members ? members.filter(m => m.user.bot).size : 0;
+            const humanCount    = totalMembers - botCount;
+            const onlineMembers = members ? members.filter(m => m.presence?.status === 'online').size : 0;
+            const idleMembers   = members ? members.filter(m => m.presence?.status === 'idle').size : 0;
+            const dndMembers    = members ? members.filter(m => m.presence?.status === 'dnd').size : 0;
+            const offlineMembers = Math.max(0, humanCount - onlineMembers - idleMembers - dndMembers);
+
+            // 2. Server info
+            const channelCount = guild.channels.cache.size;
+            const roleCount    = guild.roles.cache.size;
+            const boostCount   = guild.premiumSubscriptionCount || 0;
+            const boostTier    = guild.premiumTier || 0;
+            const createdAt    = `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>`;
+
+            // 3. Recent violations from Audit Log (Timeout=24, Kick=20, Ban=22)
+            const auditLogs = await guild.fetchAuditLogs({ limit: 10 }).catch(() => null);
+            const violations = auditLogs?.entries
+                .filter(entry => [24, 20, 22].includes(entry.action))
+                .map(entry => {
+                    const actionName = entry.action === 24 ? '🤐 Timeout'
+                                     : entry.action === 20 ? '👢 Kick'
+                                     : '🚫 Ban';
+                    const executor = entry.executor ? `<@${entry.executor.id}>` : 'Unknown';
+                    const target   = entry.target   ? `<@${entry.target.id}>`   : 'Unknown';
+                    return `• ${actionName} ${target} by ${executor}\n  └ Reason: **${entry.reason || 'No reason provided'}**`;
+                })
+                .join('\n') || '✅ No recent violations found.';
+
+            // 4. Server health checks — flags any issues
+            const issues = [];
+            if (boostTier === 0)                                    issues.push('⚠️ No active Server Boost');
+            if (guild.verificationLevel === 0)                      issues.push('⚠️ Verification level is NONE — low security');
+            if (humanCount > 0 && offlineMembers / humanCount > 0.8) issues.push('⚠️ Over 80% of members are offline');
+            if (channelCount > 50)                                  issues.push('⚠️ High channel count — consider organizing');
+            if (roleCount > 30)                                     issues.push('⚠️ High role count — consider cleanup');
+
+            const healthStatus = issues.length === 0
+                ? '✅ All systems operational — no issues detected'
+                : issues.join('\n');
+
+            const statusEmbed = new EmbedBuilder()
+                .setColor('#2b2d31')
+                .setTitle(`📊 Server Status Report — ${guild.name}`)
+                .addFields(
+                    { name: '👥 Members', value: `Total: **${totalMembers}** (Humans: **${humanCount}** | Bots: **${botCount}**)\n🟢 Online: **${onlineMembers}**  🟡 Idle: **${idleMembers}**  🔴 DND: **${dndMembers}**  ⚫ Offline: **${offlineMembers}**`, inline: false },
+                    { name: '📋 Server Info', value: `Channels: **${channelCount}**  |  Roles: **${roleCount}**\nBoosts: **${boostCount}** (Tier **${boostTier}**)  |  Verification: **${guild.verificationLevel}**\nCreated: ${createdAt}`, inline: false },
+                    { name: '🔍 Server Health', value: healthStatus, inline: false },
+                    { name: '🚫 Recent Actions (Kick / Ban / Timeout)', value: violations.length > 1024 ? violations.substring(0, 1020) + '...' : violations, inline: false }
+                )
+                .setFooter({ text: '🔒 This report is private and only visible to you.' })
+                .setTimestamp();
+
+            return await interaction.reply({ embeds: [statusEmbed], ephemeral: true });
+        }
+
+        // ============================================================
+        // ✅ [NEW - Part 1] /edit — Show modal BEFORE deferReply
         // ============================================================
         if (commandName === 'edit') {
             const link = options.getString('message_link');
@@ -1254,52 +1192,6 @@ client.on('interactionCreate', async (interaction) => {
                 console.error('❌ /edit modal error:', e);
                 return await interaction.reply({ content: '❌ Message not found. Check link.', ephemeral: true });
             }
-        }
-
-        // ============================================================
-        // ✅ [NEW - Form Builder] /setup-form — Step 1
-        // Opens field-configuration modal
-        // ============================================================
-        if (commandName === 'setup-form') {
-            const fieldsCount  = options.getInteger('fields_count');
-            const postChOption = options.getChannel('post_channel');
-
-            // Save all settings to builder storage
-            formBuilderStorage.set(interaction.user.id, {
-                buttonName:      options.getString('button_name'),
-                buttonColor:     options.getString('button_color'),
-                buttonEmoji:     options.getString('button_emoji') || null,
-                fieldsCount,
-                resultsChannelId: options.getChannel('results_channel').id,
-                messageStyle:    options.getString('message_style'),
-                sendTo:          options.getString('send_to'),
-                formType:        options.getString('form_type'),
-                embedColor:      options.getString('embed_color') || '#5865F2',
-                deleteAfter:     options.getInteger('delete_after') || 0,
-                postChannelId:   postChOption?.id || interaction.channel.id,
-                formTitle:       options.getString('form_title') || 'Submission Form',
-                embedTitle:      options.getString('embed_title') || '📥 New Submission',
-                pingSubmitter:   options.getBoolean('ping_submitter') ?? true,
-                successMessage:  options.getString('success_message') || '✅ Your submission has been sent successfully!',
-                fields:          []
-            });
-
-            // Open modal to configure field names
-            const configModal = new ModalBuilder()
-                .setCustomId(`form_config_fields_${interaction.user.id}`)
-                .setTitle(`Configure ${fieldsCount} Field(s)`);
-
-            for (let i = 1; i <= fieldsCount; i++) {
-                const fieldInput = new TextInputBuilder()
-                    .setCustomId(`field_${i}`)
-                    .setLabel(`Field ${i} — name (add * = required, !! = long text)`)
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder(`e.g: Your Name*  |  Comment!!  |  Age`)
-                    .setRequired(true);
-                configModal.addComponents(new ActionRowBuilder().addComponents(fieldInput));
-            }
-
-            return await interaction.showModal(configModal);
         }
 
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
@@ -1400,26 +1292,57 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (commandName === 'reaction') {
-                const link = options.getString('link');
-                const emoji = options.getString('emoji');
+                const subcommand = options.getSubcommand();
 
-                const linkParts = link.split('/');
-                const channelId = linkParts[linkParts.length - 2];
-                const messageId = linkParts[linkParts.length - 1];
+                if (subcommand === 'add') {
+                    const link = options.getString('link');
+                    const emoji = options.getString('emoji');
+                    const linkParts = link.split('/');
+                    const channelId = linkParts[linkParts.length - 2];
+                    const messageId = linkParts[linkParts.length - 1];
+                    try {
+                        const targetChannel = await guild.channels.fetch(channelId);
+                        if (!targetChannel) return await interaction.editReply("❌ Channel not found.");
+                        const targetMsg = await targetChannel.messages.fetch(messageId);
+                        if (!targetMsg) return await interaction.editReply("❌ Message not found.");
+                        await targetMsg.react(emoji);
+                        return await interaction.editReply({ content: `✅ Successfully reacted with ${emoji} to the message!` });
+                    } catch (error) {
+                        console.error(error);
+                        return await interaction.editReply({ content: "❌ Failed to add reaction. Make sure the link and emoji are valid." });
+                    }
+                }
 
-                try {
-                    const targetChannel = await guild.channels.fetch(channelId);
-                    if (!targetChannel) return await interaction.editReply("❌ Channel not found.");
-
-                    const targetMsg = await targetChannel.messages.fetch(messageId);
-                    if (!targetMsg) return await interaction.editReply("❌ Message not found.");
-
-                    await targetMsg.react(emoji);
-                    return await interaction.editReply({ content: `✅ Successfully reacted with ${emoji} to the message!` });
-
-                } catch (error) {
-                    console.error(error);
-                    return await interaction.editReply({ content: "❌ Failed to add reaction. Make sure the link and emoji are valid." });
+                if (subcommand === 'remove') {
+                    const link = options.getString('message_link');
+                    const linkParts = link.split('/');
+                    const channelId = linkParts[linkParts.length - 2];
+                    const messageId = linkParts[linkParts.length - 1];
+                    try {
+                        const targetChannel = await client.channels.fetch(channelId);
+                        const targetMsg = await targetChannel.messages.fetch(messageId);
+                        const reactions = targetMsg.reactions.cache;
+                        if (reactions.size === 0) {
+                            return await interaction.editReply('❌ No reactions found on this message.');
+                        }
+                        const selectOptions = reactions.map(r => ({
+                            label: `Remove ${r.emoji.name}`,
+                            description: `Count: ${r.count}`,
+                            value: r.emoji.id || r.emoji.name,
+                            emoji: r.emoji.id ? { id: r.emoji.id } : { name: r.emoji.name }
+                        }));
+                        const selector = new StringSelectMenuBuilder()
+                            .setCustomId(`delete_reaction_${channelId}_${messageId}`)
+                            .setPlaceholder('Choose the reaction to remove...')
+                            .addOptions(selectOptions);
+                        return await interaction.editReply({
+                            content: '🔍 Select the reaction you want to remove:',
+                            components: [new ActionRowBuilder().addComponents(selector)]
+                        });
+                    } catch (error) {
+                        console.error(error);
+                        return await interaction.editReply({ content: "❌ Could not find message. Check permissions or link." });
+                    }
                 }
             }
 
@@ -1451,8 +1374,42 @@ client.on('interactionCreate', async (interaction) => {
                 }, delay * 60000);
             }
 
+            if (commandName === 'delete') {
+                const link = interaction.options.getString('message_link');
+                
+                const parts = link.split('/');
+                const messageId = parts[parts.length - 1];
+                const channelId = parts[parts.length - 2];
+
+                try {
+                    const channel = await client.channels.fetch(channelId);
+                    const targetMessage = await channel.messages.fetch(messageId);
+
+                    await targetMessage.delete();
+
+                    await interaction.editReply({ 
+                        content: "✅ Message deleted successfully!"
+                    });
+
+                } catch (error) {
+                    console.error(error);
+                    
+                    let errorMessage = "❌ Could not delete the message.";
+                    if (error.code === 50013) errorMessage = "❌ I don't have permission to delete this message (Need 'Manage Messages').";
+                    if (error.code === 10008) errorMessage = "❌ Message not found. It might be already deleted.";
+                    if (error.code === 50005) errorMessage = "❌ I cannot delete someone else's message in DMs!";
+
+                    await interaction.editReply({ 
+                        content: errorMessage
+                    });
+                }
+            }
+
             // ============================================================
             // ✅ /dm Command Handler
+            // Mode 1: user option      → direct send, no UI
+            // Mode 2: no user          → Snippet 1: dm_target_select (Select Who To Send)
+            // Mode 3: everyone=true    → Snippet 2: dm_exclude_select (Select Who NOT To Send)
             // ============================================================
             if (commandName === 'dm') {
                 const targetUser     = options.getUser('user');
@@ -1466,11 +1423,13 @@ client.on('interactionCreate', async (interaction) => {
                 const color          = options.getString('color') || '#3498db';
                 const reactionEmoji  = options.getString('reaction') || null;
                 const repeatInterval = options.getInteger('repeat_interval') || 0;
+                const showDeleteButton = options.getBoolean('delete_button') || false;
 
                 if (!msgContent && !image) {
                     return await interaction.editReply({ content: '❌ You must provide a **message** or an **image** to send.' });
                 }
 
+                // --- Repeating DM (ads system) ---
                 if (repeatInterval > 0) {
                     const adKey = `dmad_${Date.now()}`;
                     const dmAd = {
@@ -1496,8 +1455,9 @@ client.on('interactionCreate', async (interaction) => {
                     });
                 }
 
-                const settings = { style, delay, delAfter, msgContent, caption, imageUrl: image?.url || null, color, reactionEmoji };
+                const settings = { style, delay, delAfter, msgContent, caption, imageUrl: image?.url || null, color, reactionEmoji, showDeleteButton };
 
+                // ── Mode 1: Direct user — send immediately, no selector UI ──
                 if (targetUser && !isEveryone) {
                     await interaction.editReply({ content: `✅ Scheduling DM to **${targetUser.username}** in ${delay} min...` });
                     setTimeout(async () => {
@@ -1507,9 +1467,12 @@ client.on('interactionCreate', async (interaction) => {
                     return;
                 }
 
+                // Save settings so the select menu handler can retrieve them
                 dmSettingsStorage.set(interaction.user.id, settings);
 
+                // ── Mode 2: No user, everyone=false → Snippet 1 (Direct Mode selector) ──
                 if (!isEveryone) {
+                    // --- [Direct Mode: Select Who To Send] ---
                     const userSelector = new UserSelectMenuBuilder()
                         .setCustomId('dm_target_select')
                         .setPlaceholder('✅ Select the users you want to message')
@@ -1524,6 +1487,8 @@ client.on('interactionCreate', async (interaction) => {
                     });
                 }
 
+                // ── Mode 3: everyone=true → Snippet 2 (Everyone Mode exclude selector) ──
+                // --- [Everyone Mode: Select Who NOT To Send] ---
                 const exceptionSelector = new UserSelectMenuBuilder()
                     .setCustomId('dm_exclude_select')
                     .setPlaceholder('🚫 Select users to EXCLUDE (No Send)')
@@ -1552,7 +1517,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     } 
     // ============================================================
-    // ✅ dm_send_to_all Button
+    // ✅ [NEW] dm_send_to_all Button — Everyone mode with no exclusions
     // ============================================================
     else if (interaction.isButton() && interaction.customId === 'dm_send_to_all') {
         const settings = dmSettingsStorage.get(interaction.user.id);
