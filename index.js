@@ -55,7 +55,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: '🤖 | Version: 4.5',
+            state: '🤖 | Version: 4.6',
             type: 4
         }]
     }
@@ -270,25 +270,28 @@ const generalLinkRegex = /(https?:\/\/[^\s]+)/gi;
 // Sends DM and tracks message link back to initiator
 // ============================================================
 const buildDMPayloadGlobal = (userId, settings) => {
-    const { style, msgContent, caption, imageUrl, color, delAfter } = settings;
+    const { style, msgContent, caption, imageUrl, color, showDeleteButton } = settings;
 
-    const deleteRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`delete_dm_${userId}`)
-            .setLabel('Delete Message 🗑️')
-            .setStyle(ButtonStyle.Danger)
-    );
+    const components = [];
+    if (showDeleteButton) {
+        components.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`delete_dm_${userId}`)
+                .setLabel('Delete Message 🗑️')
+                .setStyle(ButtonStyle.Danger)
+        ));
+    }
 
     if (style === 'embed') {
         const embed = new EmbedBuilder().setColor(color || '#3498db').setTimestamp();
         if (msgContent) embed.setDescription(msgContent);
         if (caption)    embed.setTitle(caption);
         if (imageUrl)   embed.setImage(imageUrl);
-        return { embeds: [embed], components: [deleteRow] };
+        return { embeds: [embed], components };
     } else {
         const payload = {
             content: [msgContent, caption].filter(Boolean).join('\n') || ' ',
-            components: [deleteRow]
+            components
         };
         if (imageUrl) payload.files = [imageUrl];
         return payload;
@@ -405,7 +408,8 @@ const commands = [
         .addStringOption(o => o.setName('caption').setDescription('Caption text for the image').setRequired(false))
         .addStringOption(o => o.setName('color').setDescription('Embed box color').addChoices({name:'Blue',value:'#3498db'},{name:'Red',value:'#e74c3c'},{name:'Green',value:'#2ecc71'},{name:'Gold',value:'#f1c40f'}).setRequired(false))
         .addIntegerOption(o => o.setName('repeat_interval').setDescription('Repeat DM every X minutes (0 = no repeat)').setRequired(false))
-        .addStringOption(o => o.setName('reaction').setDescription('Emoji to auto-react on the DM message').setRequired(false)),
+        .addStringOption(o => o.setName('reaction').setDescription('Emoji to auto-react on the DM message').setRequired(false))
+        .addBooleanOption(o => o.setName('delete_button').setDescription('Show a red Delete button to the recipient (default: off)').setRequired(false)),
 
     // ============================================================
     // ✅ /edit Command — Now opens a modal with old content pre-filled
@@ -1419,6 +1423,7 @@ client.on('interactionCreate', async (interaction) => {
                 const color          = options.getString('color') || '#3498db';
                 const reactionEmoji  = options.getString('reaction') || null;
                 const repeatInterval = options.getInteger('repeat_interval') || 0;
+                const showDeleteButton = options.getBoolean('delete_button') || false;
 
                 if (!msgContent && !image) {
                     return await interaction.editReply({ content: '❌ You must provide a **message** or an **image** to send.' });
@@ -1450,7 +1455,7 @@ client.on('interactionCreate', async (interaction) => {
                     });
                 }
 
-                const settings = { style, delay, delAfter, msgContent, caption, imageUrl: image?.url || null, color, reactionEmoji };
+                const settings = { style, delay, delAfter, msgContent, caption, imageUrl: image?.url || null, color, reactionEmoji, showDeleteButton };
 
                 // ── Mode 1: Direct user — send immediately, no selector UI ──
                 if (targetUser && !isEveryone) {
