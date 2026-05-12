@@ -55,7 +55,7 @@ const client = new Client({
         status: 'online',
         activities: [{
             name: 'Custom Status',
-            state: '🤖 | Version: 4.6',
+            state: '🤖 | Version: 5.0',
             type: 4
         }]
     }
@@ -77,7 +77,12 @@ const CONFIG = {
 const adsStorage = new Map();
 const warnStorage = new Map();
 const dmAdsStorage = new Map();
-const dmSettingsStorage = new Map(); // ✅ [NEW - Part 4] Stores /dm settings between command → select menu
+const dmSettingsStorage = new Map();
+
+// ============================================================
+// --- ✅ [NEW] formSettingsDB — Stores dynamic form configs ---
+// ============================================================
+const formSettingsDB = new Map();
 
 const pendingUpdates = new Map(); 
 const ADMIN_PASSWORD = "Pro@Robot510";
@@ -425,7 +430,8 @@ const commands = [
         .setDescription('Get a full private status report of the server'),
 
     // ============================================================
-    // ✅ [NEW] /setup-form Command
+    // ✅ [UPGRADED] /setup-form Command — Now with dynamic fields,
+    //    embed mode, delay, auto-delete, ephemeral reply controls
     // ============================================================
     new SlashCommandBuilder()
         .setName('setup-form')
@@ -439,8 +445,14 @@ const commands = [
                 { name: 'Red',   value: 'Danger'    }
             ))
         .addChannelOption(opt => opt.setName('target_channel').setDescription('Where results will be sent').setRequired(true))
+        .addIntegerOption(opt => opt.setName('fields_count').setDescription('Number of form fields (1–5)').setRequired(true).setMinValue(1).setMaxValue(5))
+        .addBooleanOption(opt => opt.setName('use_embed').setDescription('Send result in an embed box?').setRequired(true))
         .addBooleanOption(opt => opt.setName('send_to_dm').setDescription('Send the form button to a user DM instead of here').setRequired(false))
-        .addUserOption(opt => opt.setName('dm_user').setDescription('The user to send the form button to (required if send_to_dm is true)').setRequired(false)),
+        .addUserOption(opt => opt.setName('dm_user').setDescription('The user to send the form button to (required if send_to_dm is true)').setRequired(false))
+        .addStringOption(opt => opt.setName('embed_color').setDescription('Embed hex color (e.g. #FF0000)').setRequired(false))
+        .addIntegerOption(opt => opt.setName('send_delay').setDescription('Delay before sending result to channel (seconds)').setRequired(false))
+        .addIntegerOption(opt => opt.setName('delete_after').setDescription('Auto-delete result message after (seconds, 0 = never)').setRequired(false))
+        .addBooleanOption(opt => opt.setName('ephemeral_reply').setDescription('Only submitter sees the confirmation message?').setRequired(false)),
 
     // ============================================================
     // ✅ Message Context Menu Commands (Apps Menu)
@@ -927,7 +939,33 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ✅ [NEW] form_start_ Button — Opens the submission modal
+    // ✅ [NEW] Dynamic form button handler (form_<timestamp>)
+    //    Opens a modal with the number of fields the admin chose
+    // ============================================================
+    if (interaction.isButton() && interaction.customId.startsWith('form_') && !interaction.customId.startsWith('form_start_')) {
+        const formSettings = formSettingsDB.get(interaction.customId);
+        if (!formSettings) {
+            return await interaction.reply({ content: '❌ This form has expired or was not found.', ephemeral: true });
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId(`submit_${interaction.customId}`)
+            .setTitle('Form Submission');
+
+        for (let i = 1; i <= formSettings.fieldsCount; i++) {
+            const field = new TextInputBuilder()
+                .setCustomId(`field_${i}`)
+                .setLabel(`Field ${i}`)
+                .setStyle(i === 1 ? TextInputStyle.Short : TextInputStyle.Paragraph)
+                .setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(field));
+        }
+
+        return await interaction.showModal(modal);
+    }
+
+    // ============================================================
+    // ✅ [LEGACY] form_start_ Button — Opens the old submission modal
     // ============================================================
     if (interaction.isButton() && interaction.customId.startsWith('form_start_')) {
         const targetChannelId = interaction.customId.split('_')[2];
@@ -1064,7 +1102,63 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ✅ [NEW] submit_modal_ Handler — Receives form data and sends to target channel
+    // ✅ [NEW] Dynamic submit_form_ Modal Handler
+    //    Receives dynamic field answers and sends to target channel
+    // ============================================================
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('submit_form_')) {
+        const originalFormId = interaction.customId.replace('submit_', '');
+        const formSettings   = formSettingsDB.get(originalFormId);
+
+        if (!formSettings) {
+            return await interaction.reply({ content: '❌ Error processing form. The form session may have expired.', ephemeral: true });
+        }
+
+        const embedFields = [];
+        let submittedText = '';
+
+        for (let i = 1; i <= formSettings.fieldsCount; i++) {
+            const answer = interaction.fields.getTextInputValue(`field_${i}`);
+            submittedText += `**Field ${i}:**\n${answer}\n\n`;
+            embedFields.push({ name: `Field ${i}`, value: answer || '—' });
+        }
+
+        await interaction.reply({
+            content: '✅ Your submission is being processed...',
+            ephemeral: formSettings.ephemeralReply
+        });
+
+        setTimeout(async () => {
+            try {
+                const targetChannel = await client.channels.fetch(formSettings.targetChannel);
+                let sentMessage;
+
+                if (formSettings.useEmbed) {
+                    const resultEmbed = new EmbedBuilder()
+                        .setColor(formSettings.embedColor || '#5865F2')
+                        .setTitle('📥 New Submission')
+                        .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() })
+                        .addFields(embedFields)
+                        .setTimestamp();
+                    sentMessage = await targetChannel.send({ embeds: [resultEmbed] });
+                } else {
+                    sentMessage = await targetChannel.send(
+                        `📥 **New Submission from <@${interaction.user.id}>:**\n${submittedText}`
+                    );
+                }
+
+                if (formSettings.deleteAfter > 0) {
+                    setTimeout(() => sentMessage.delete().catch(() => {}), formSettings.deleteAfter);
+                }
+            } catch (error) {
+                console.error('❌ Error sending form result:', error);
+            }
+        }, formSettings.sendDelay);
+
+        return;
+    }
+
+    // ============================================================
+    // ✅ [LEGACY] submit_modal_ Handler — Old 2-field form
     // ============================================================
     if (interaction.isModalSubmit() && interaction.customId.startsWith('submit_modal_')) {
         const targetChannelId = interaction.customId.split('_')[2];
@@ -1250,11 +1344,10 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         // ============================================================
-        // ✅ [NEW] /setup-form — Works in server channel OR user DM
-        // Must be before deferReply (reply with visible components)
+        // ✅ [UPGRADED] /setup-form — Dynamic fields, embed control,
+        //    delay, auto-delete, ephemeral reply, DM support
         // ============================================================
         if (commandName === 'setup-form') {
-            // ── Manual permission check (Admin or Owner only) ──
             const isAdmin = interaction.guild
                 ? interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)
                 : interaction.user.id === CONFIG.OWNER_ID;
@@ -1269,14 +1362,41 @@ client.on('interactionCreate', async (interaction) => {
             const sendToDM      = options.getBoolean('send_to_dm') || false;
             const dmUser        = options.getUser('dm_user');
 
+            // New dynamic options
+            const fieldsCount    = options.getInteger('fields_count') || 1;
+            const useEmbed       = options.getBoolean('use_embed') ?? true;
+            const embedColor     = options.getString('embed_color') || '#5865F2';
+            const sendDelay      = (options.getInteger('send_delay') || 0) * 1000;
+            const deleteAfter    = (options.getInteger('delete_after') || 0) * 1000;
+            const ephemeralReply = options.getBoolean('ephemeral_reply') || false;
+
+            // Store settings with a unique timestamped ID
+            const uniqueFormId = `form_${Date.now()}`;
+            formSettingsDB.set(uniqueFormId, {
+                fieldsCount,
+                useEmbed,
+                embedColor,
+                targetChannel: targetChannel.id,
+                sendDelay,
+                deleteAfter,
+                ephemeralReply
+            });
+
+            const btnColorMap = {
+                'Primary':   ButtonStyle.Primary,
+                'Success':   ButtonStyle.Success,
+                'Danger':    ButtonStyle.Danger,
+                'Secondary': ButtonStyle.Secondary
+            };
+
             const button = new ButtonBuilder()
-                .setCustomId(`form_start_${targetChannel.id}`)
+                .setCustomId(uniqueFormId)
                 .setLabel(btnName)
-                .setStyle(ButtonStyle[btnColor]);
+                .setStyle(btnColorMap[btnColor] || ButtonStyle.Primary);
 
             const row = new ActionRowBuilder().addComponents(button);
 
-            // ── Mode 1: Send button to a user's DM ──
+            // Mode 1: Send button to a user's DM
             if (sendToDM) {
                 if (!dmUser) {
                     return await interaction.reply({ content: '❌ You must select a user in `dm_user` when `send_to_dm` is true.', ephemeral: true });
@@ -1296,7 +1416,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
-            // ── Mode 2: Send button in the current channel ──
+            // Mode 2: Send button in the current channel
             return await interaction.reply({
                 content: `✅ Your custom form button is ready! Results will be sent to <#${targetChannel.id}>.`,
                 components: [row]
