@@ -80,6 +80,18 @@ const dmAdsStorage = new Map();
 const dmSettingsStorage = new Map();
 
 // ============================================================
+// --- ✅ [SECURITY] Protection Storage ---
+// ============================================================
+const spamTracker = new Map();       // userId -> { count, timer }
+const raidTracker = new Map();       // guildId -> { joins: [], locked }
+const SPAM_LIMIT = 5;                // max messages in timeframe
+const SPAM_WINDOW = 5000;            // 5 seconds
+const RAID_THRESHOLD = 8;            // members joining in short time
+const RAID_WINDOW = 10000;           // 10 seconds
+const NEW_ACCOUNT_DAYS = 7;          // min account age in days
+const MIN_ACCOUNT_MS = NEW_ACCOUNT_DAYS * 24 * 60 * 60 * 1000;
+
+// ============================================================
 // --- ✅ [NEW] formSettingsDB — Stores dynamic form configs ---
 // ============================================================
 const formSettingsDB = new Map();
@@ -490,6 +502,13 @@ const commands = [
         .addBooleanOption(opt => opt.setName('send_to_dm').setDescription('Send the form button to a user DM instead of here').setRequired(false))
         .addUserOption(opt => opt.setName('dm_user').setDescription('The user to send the form button to (required if send_to_dm is true)').setRequired(false)),
 
+    new SlashCommandBuilder()
+        .setName('lockdown')
+        .setDescription('🔒 Lock or unlock all server channels in an emergency')
+        .addStringOption(o => o.setName('action').setDescription('lock or unlock').setRequired(true)
+            .addChoices({ name: '🔒 Lock All', value: 'lock' }, { name: '🔓 Unlock All', value: 'unlock' }))
+        .addStringOption(o => o.setName('reason').setDescription('Reason for lockdown').setRequired(false)),
+
     // ============================================================
     // ✅ Message Context Menu Commands (Apps Menu)
     // ============================================================
@@ -771,6 +790,63 @@ client.on('messageCreate', async (message) => {
     }
 
     if (!message.guild) return;
+
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+
+        // ── Anti-Spam ──────────────────────────────────────────
+        const spamData = spamTracker.get(message.author.id) || { count: 0, timer: null };
+        spamData.count++;
+        if (spamData.timer) clearTimeout(spamData.timer);
+        spamData.timer = setTimeout(() => spamTracker.delete(message.author.id), SPAM_WINDOW);
+        spamTracker.set(message.author.id, spamData);
+
+        if (spamData.count >= SPAM_LIMIT) {
+            spamTracker.delete(message.author.id);
+            await message.member.timeout(10 * 60 * 1000, 'Spam detected').catch(() => {});
+            const spamEmbed = new EmbedBuilder()
+                .setTitle('🚫 Anti-Spam System')
+                .setDescription(`<@${message.author.id}> تم إسكاتك لمدة **10 دقائق** بسبب الإرسال السريع المتكرر.`)
+                .setColor('#e74c3c').setTimestamp();
+            const sm = await message.channel.send({ embeds: [spamEmbed] });
+            setTimeout(() => sm.delete().catch(() => {}), 8000);
+            await sendModDM(message.member.user, '🚫 Anti-Spam', 'تم إسكاتك 10 دقائق بسبب الإرسال السريع. تمهل قليلاً!', message.guild.name);
+            sendDetailedLog(message.guild, 'Anti-Spam Triggered', `<@${message.author.id}> أرسل رسائل بسرعة كبيرة — تم timeout 10 دقائق.`, '#e67e22');
+            return;
+        }
+
+        // ── Anti-Mass-Mention ──────────────────────────────────
+        const mentionCount = message.mentions.users.size + message.mentions.roles.size;
+        if (mentionCount >= 5) {
+            await message.delete().catch(() => {});
+            await message.member.ban({ reason: 'Mass mention / Mention spam' }).catch(() => {});
+            const mmEmbed = new EmbedBuilder()
+                .setTitle('🚫 Anti-Mass-Mention')
+                .setDescription(`تم حظر <@${message.author.id}> بسبب الـ mention spam (${mentionCount} mention في رسالة واحدة).`)
+                .setColor('#c0392b').setTimestamp();
+            const mm = await message.channel.send({ embeds: [mmEmbed] });
+            setTimeout(() => mm.delete().catch(() => {}), 10000);
+            sendDetailedLog(message.guild, 'Mass Mention Ban', `<@${message.author.id}> تم حظره — ${mentionCount} mention في رسالة.`, '#c0392b');
+            return;
+        }
+
+        // ── Anti-Caps ──────────────────────────────────────────
+        const msgContent = message.content;
+        if (msgContent.length > 10) {
+            const upperCount = (msgContent.match(/[A-Z]/g) || []).length;
+            const letterCount = (msgContent.match(/[a-zA-Z]/g) || []).length;
+            if (letterCount > 5 && upperCount / letterCount > 0.8) {
+                await message.delete().catch(() => {});
+                const capsEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ Anti-Caps System')
+                    .setDescription(`<@${message.author.id}> الرجاء عدم الكتابة بحروف كبيرة بشكل مبالغ فيه.`)
+                    .setColor('#f39c12').setTimestamp();
+                const cm = await message.channel.send({ embeds: [capsEmbed] });
+                setTimeout(() => cm.delete().catch(() => {}), 6000);
+                return;
+            }
+        }
+
+    }
 
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const content = message.content.toLowerCase();
@@ -1291,6 +1367,40 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
         const { commandName, options, guild, channel } = interaction;
+
+        // ============================================================
+        // ✅ /lockdown — Lock or Unlock all channels
+        // ============================================================
+        if (commandName === 'lockdown') {
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return await interaction.reply({ content: '🚫 هذا الأمر للأدمن فقط.', ephemeral: true });
+            }
+            await interaction.deferReply({ ephemeral: true });
+            const action = interaction.options.getString('action');
+            const reason = interaction.options.getString('reason') || (action === 'lock' ? 'تم تفعيل الـ Lockdown' : 'تم رفع الـ Lockdown');
+            const textChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+            const isLock = action === 'lock';
+
+            for (const [, ch] of textChannels) {
+                await ch.permissionOverwrites.edit(interaction.guild.roles.everyone, {
+                    SendMessages: isLock ? false : null
+                }).catch(() => {});
+            }
+
+            const lockEmbed = new EmbedBuilder()
+                .setTitle(isLock ? '🔒 تم قفل السيرفر' : '🔓 تم فتح السيرفر')
+                .setDescription(isLock
+                    ? `تم قفل جميع القنوات.\n**السبب:** ${reason}`
+                    : `تم فتح جميع القنوات.\n**السبب:** ${reason}`)
+                .setColor(isLock ? '#e74c3c' : '#2ecc71')
+                .setFooter({ text: `بواسطة: ${interaction.user.username}` })
+                .setTimestamp();
+
+            const logCh = interaction.guild.channels.cache.get(CONFIG.SUBMIT_LOG);
+            if (logCh) await logCh.send({ embeds: [lockEmbed] });
+            sendDetailedLog(interaction.guild, isLock ? 'Server Lockdown' : 'Server Unlocked', reason, isLock ? '#e74c3c' : '#2ecc71');
+            return await interaction.editReply({ content: isLock ? '🔒 تم قفل جميع القنوات بنجاح.' : '🔓 تم فتح جميع القنوات بنجاح.' });
+        }
 
         // ============================================================
         // ✅ /check — Full Server Status Report (Ephemeral)
@@ -1830,6 +1940,48 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 client.on('guildMemberAdd', async (member) => {
+
+    // ── Anti-Raid ──────────────────────────────────────────────
+    const guildId = member.guild.id;
+    const raidData = raidTracker.get(guildId) || { joins: [], locked: false };
+    const now = Date.now();
+    raidData.joins = raidData.joins.filter(t => now - t < RAID_WINDOW);
+    raidData.joins.push(now);
+    raidTracker.set(guildId, raidData);
+
+    if (raidData.joins.length >= RAID_THRESHOLD && !raidData.locked) {
+        raidData.locked = true;
+        raidTracker.set(guildId, raidData);
+        const textChannels = member.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+        for (const [, ch] of textChannels) {
+            await ch.permissionOverwrites.edit(member.guild.roles.everyone, { SendMessages: false }).catch(() => {});
+        }
+        const logCh = member.guild.channels.cache.get(CONFIG.SUBMIT_LOG);
+        if (logCh) {
+            const raidEmbed = new EmbedBuilder()
+                .setTitle('🚨 RAID DETECTED — Server Locked')
+                .setDescription(`تم اكتشاف **Raid** — انضم ${raidData.joins.length} أعضاء في أقل من ${RAID_WINDOW/1000} ثواني!\nتم قفل السيرفر تلقائياً. استخدم **/lockdown unlock** لفتحه.`)
+                .setColor('#c0392b').setTimestamp();
+            await logCh.send({ content: `<@${CONFIG.OWNER_ID}>`, embeds: [raidEmbed] });
+        }
+        setTimeout(async () => {
+            raidData.locked = false;
+            raidTracker.set(guildId, raidData);
+            const textChs = member.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+            for (const [, ch] of textChs) {
+                await ch.permissionOverwrites.edit(member.guild.roles.everyone, { SendMessages: null }).catch(() => {});
+            }
+        }, 5 * 60 * 1000);
+    }
+
+    // ── New Account Protection ─────────────────────────────────
+    const accountAge = Date.now() - member.user.createdTimestamp;
+    if (accountAge < MIN_ACCOUNT_MS) {
+        await member.kick('New account — less than 7 days old').catch(() => {});
+        sendDetailedLog(member.guild, '🛡️ New Account Kicked', `<@${member.id}> تم طرده تلقائياً — الأكونت عمره أقل من **7 أيام**.`, '#e67e22');
+        return;
+    }
+
     sendDetailedLog(member.guild, 'New Member Joined', `Member: <@${member.id}> has joined the server.`, '#2ecc71');
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
     await member.roles.add(rolesToAdd).catch(() => {});
