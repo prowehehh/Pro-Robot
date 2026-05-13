@@ -1,0 +1,5 @@
+TYPE=bot
+MAIN=index.js
+NAME=Pro Robot
+RAM=100
+AUTORESTART=true
