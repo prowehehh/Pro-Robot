@@ -193,21 +193,42 @@ async function getEliteAIResponse(userId, userMessage, guild) {
     }
     let memory = chatMemory.get(userId);
 
-    const systemPrompt = `You are "Pro Robot", the autonomous Human-like Executive Manager of the Discord server "${serverName}".
-        - You are highly intelligent, observant, and act as if you own the server alongside ${owner}.
-        - Current Server Status: ${memberCount} members are currently under your supervision.
-        - Owner: ${owner} (<@${CONFIG.OWNER_ID}>).
-        - Current Location: Egypt.
-        - IDENTITY: You are not a simple bot; you are a sophisticated AI protector. 
-        - LANGUAGES: You are a polyglot. You MUST understand and respond fluently in ALL world languages (Arabic, English, etc.) based on the user's language.
-        - MEMORY: You remember previous parts of this conversation. Use the provided history to give continuous, smart answers.
-        - TONE: Professional, helpful, and authoritative.
-        - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`;
+    const systemPrompt = `You are "Pro Robot", the all-knowing AI assistant and Executive Manager of the Discord server "${serverName}".
+
+IDENTITY:
+- You are not a simple bot. You are a highly advanced AI with deep knowledge across ALL fields: science, technology, history, math, gaming, sports, culture, religion, medicine, law, programming, and more.
+- You act as a trusted co-owner of this server alongside ${owner} (<@${CONFIG.OWNER_ID}>).
+- Server has ${memberCount} members under your supervision. Location: Egypt.
+
+KNOWLEDGE & ANSWERS:
+- You MUST answer EVERY question asked, no matter the topic, with FULL detail, accuracy, and depth.
+- NEVER say "I don't know" or refuse to answer general knowledge questions. Always provide a thorough, well-structured response.
+- For complex topics, break your answer into clear sections or bullet points.
+- Include examples, explanations, and context whenever helpful.
+- If a question has multiple parts, answer each part clearly.
+
+LANGUAGES:
+- You are a polyglot. Detect the user's language and respond in the EXACT same language.
+- If the user writes in Arabic (Egyptian dialect or formal), respond in Arabic.
+- If the user writes in English, respond in English.
+- Never mix languages unless the user does so first.
+
+MEMORY:
+- You remember the full conversation history. Use it to give continuous, connected answers.
+- Reference previous messages when relevant to show you're paying attention.
+
+TONE:
+- Be professional, friendly, and authoritative.
+- For server-related questions, be formal and confident.
+- For casual questions, be approachable and engaging.
+
+SPECIAL RULE:
+- If the user asks to change, add, or update any server setting or info, respond with: "لمعالجة هذا الطلب، يرجى الضغط على الزر أدناه وإدخال كلمة المرور." (or in English if they asked in English).`;
 
     memory.push({ role: "user", parts: [{ text: userMessage }] });
 
-    if (memory.length > 10) {
-        memory.splice(0, 2); 
+    if (memory.length > 20) {
+        memory.splice(0, 2);
     }
 
     try {
@@ -219,14 +240,14 @@ async function getEliteAIResponse(userId, userMessage, guild) {
                 body: JSON.stringify({
                     systemInstruction: { parts: [{ text: systemPrompt }] },
                     contents: memory,
-                    generationConfig: { temperature: 0.7, maxOutputTokens: 500 }
+                    generationConfig: { temperature: 0.8, maxOutputTokens: 2000 }
                 })
             }
         );
 
         const data = await response.json();
         const aiReply = data.candidates?.[0]?.content?.parts?.[0]?.text 
-            || `I am currently analyzing server data. Please repeat your question. <@${CONFIG.OWNER_ID}>`;
+            || `جاري تحليل البيانات، من فضلك أعد سؤالك. <@${CONFIG.OWNER_ID}>`;
 
         memory.push({ role: "model", parts: [{ text: aiReply }] });
         chatMemory.set(userId, memory);
@@ -235,8 +256,19 @@ async function getEliteAIResponse(userId, userMessage, guild) {
 
     } catch (error) {
         console.error("AI System Error:", error);
-        return `My connection to the main frame was interrupted. Try again! <@${CONFIG.OWNER_ID}>`;
+        return `حدث خطأ في الاتصال بالذكاء الاصطناعي، حاول مرة أخرى! <@${CONFIG.OWNER_ID}>`;
     }
+}
+
+function isQuestion(text) {
+    const t = text.trim().toLowerCase();
+    if (t.includes('?') || t.includes('؟')) return true;
+    const questionWords = [
+        'كيف','ماذا','لماذا','متى','أين','اين','من','ما ','هل','ايه','ازاي','امتى','فين','مين','ليه','وين','شو','ليش','قديش','كم ',
+        'how','what','why','when','where','who','which','whose','whom',
+        'can ','could','would','should','is ','are ','was ','were ','does ','do ','did ','will ','shall ','has ','have ','had '
+    ];
+    return questionWords.some(w => t.startsWith(w) || t.includes(' ' + w.trim() + ' '));
 }
 
 async function sendDetailedLog(guild, title, details, color = '#3498db') {
@@ -789,15 +821,21 @@ client.on('messageCreate', async (message) => {
 
     const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
     const isMentioned = message.mentions.users.has(client.user.id) && !message.mentions.everyone;
+    const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
+    const shouldRespond = isHelpChannel || isMentioned || isQuestion(cleanContent);
 
-    if (isHelpChannel || isMentioned) {
+    if (shouldRespond) {
         try {
             await message.channel.sendTyping();
-            const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
 
             const text = await getEliteAIResponse(message.author.id, cleanContent || message.content, message.guild);
             
             if (text) {
+                const chunks = [];
+                for (let i = 0; i < text.length; i += 1900) {
+                    chunks.push(text.slice(i, i + 1900));
+                }
+
                 const isUpdateTask = cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف");
 
                 if (isUpdateTask) {
@@ -805,10 +843,12 @@ client.on('messageCreate', async (message) => {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('open_admin_modal').setLabel('Enter Password 🔐').setStyle(ButtonStyle.Danger)
                     );
-                    const botMsg = await message.reply({ content: text, components: [row] });
+                    const botMsg = await message.reply({ content: chunks[0], components: [row] });
+                    for (let i = 1; i < chunks.length; i++) await message.channel.send(chunks[i]);
                     if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
                 } else {
-                    const botMsg = await message.reply(text);
+                    const botMsg = await message.reply(chunks[0]);
+                    for (let i = 1; i < chunks.length; i++) await message.channel.send(chunks[i]);
                     if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
                 }
             }
