@@ -34,9 +34,17 @@ async function getDB(guildId) {
     return data;
 }
 
-app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
-app.listen(5000, '0.0.0.0');
+const express = require('express');
+const app = express();
+const port = 3000;
 
+app.get('/', (req, res) => {
+  res.send('Pro Robot is Online! 🤖');
+});
+
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
