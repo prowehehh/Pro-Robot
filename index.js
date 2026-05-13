@@ -246,6 +246,8 @@ SPECIAL RULE:
         );
 
         const data = await response.json();
+        console.log("Gemini API status:", response.status);
+        console.log("Gemini API response:", JSON.stringify(data).slice(0, 500));
         const aiReply = data.candidates?.[0]?.content?.parts?.[0]?.text 
             || `جاري تحليل البيانات، من فضلك أعد سؤالك. <@${CONFIG.OWNER_ID}>`;
 
