@@ -708,7 +708,8 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 });
 
 client.on('messageDelete', (message) => {
-    if (message.author?.bot) return;
+    if (!message.author || message.author.bot) return;
+    if (!message.guild) return;
     sendDetailedLog(message.guild, 'Message Deleted', 
         `🗑️ Message by <@${message.author.id}> deleted in <#${message.channel.id}>:\n**Content:** ${message.content || "Empty/Image"}`, '#e74c3c');
 });
