@@ -680,7 +680,7 @@ client.on('messageDelete', (message) => {
 });
 
 client.on('messageUpdate', (oldMessage, newMessage) => {
-    if (oldMessage.author?.bot || oldMessage.content === newMessage.content) return;
+    if (!oldMessage.author || oldMessage.author.bot || oldMessage.content === newMessage.content) return;
     sendDetailedLog(oldMessage.guild, 'Message Edited', 
         `📝 <@${oldMessage.author.id}> edited message in <#${oldMessage.channel.id}>:\n**Old:** ${oldMessage.content}\n**New:** ${newMessage.content}`, '#3498db');
 });
