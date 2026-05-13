@@ -754,6 +754,16 @@ client.on('messageCreate', async (message) => {
         } else {
             await logDMActivity(message.author.id, message.author.username, message.content, 'IN_TEXT');
         }
+        try {
+            await message.channel.sendTyping();
+            const fakeGuild = { memberCount: '?', name: 'DM', members: { cache: new Map() } };
+            const text = await getEliteAIResponse(message.author.id, message.content, fakeGuild);
+            if (text) {
+                const chunks = [];
+                for (let i = 0; i < text.length; i += 1900) chunks.push(text.slice(i, i + 1900));
+                for (const chunk of chunks) await message.reply(chunk);
+            }
+        } catch (e) { console.error(e); }
         return;
     }
 
@@ -822,7 +832,7 @@ client.on('messageCreate', async (message) => {
     const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
     const isMentioned = message.mentions.users.has(client.user.id) && !message.mentions.everyone;
     const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
-    const shouldRespond = isHelpChannel || isMentioned || isQuestion(cleanContent);
+    const shouldRespond = isHelpChannel || isMentioned;
 
     if (shouldRespond) {
         try {
