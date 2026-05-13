@@ -848,18 +848,25 @@ client.on('messageCreate', async (message) => {
 
                 const isUpdateTask = cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف");
 
+                const sentBotMsgs = [];
+
                 if (isUpdateTask) {
                     pendingUpdates.set(message.author.id, cleanContent);
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('open_admin_modal').setLabel('Enter Password 🔐').setStyle(ButtonStyle.Danger)
                     );
-                    const botMsg = await message.reply({ content: chunks[0], components: [row] });
-                    for (let i = 1; i < chunks.length; i++) await message.channel.send(chunks[i]);
-                    if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
+                    sentBotMsgs.push(await message.reply({ content: chunks[0], components: [row] }));
+                    for (let i = 1; i < chunks.length; i++) sentBotMsgs.push(await message.channel.send(chunks[i]));
                 } else {
-                    const botMsg = await message.reply(chunks[0]);
-                    for (let i = 1; i < chunks.length; i++) await message.channel.send(chunks[i]);
-                    if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
+                    sentBotMsgs.push(await message.reply(chunks[0]));
+                    for (let i = 1; i < chunks.length; i++) sentBotMsgs.push(await message.channel.send(chunks[i]));
+                }
+
+                if (isHelpChannel) {
+                    setTimeout(() => {
+                        message.delete().catch(() => {});
+                        sentBotMsgs.forEach(m => m.delete().catch(() => {}));
+                    }, 5 * 60 * 1000);
                 }
             }
 
