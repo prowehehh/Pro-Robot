@@ -35,7 +35,7 @@ async function getDB(guildId) {
 }
 
 app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
-app.listen(process.env.PORT || 3000);
+app.listen(5000, '0.0.0.0');
 
 const client = new Client({
     intents: [
