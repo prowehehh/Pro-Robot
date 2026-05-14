@@ -35,5 +35,5 @@ async def ping(ctx):
 keep_alive()
 
 # استخدام المتغيرات البيئية لحماية التوكن
-token = os.environ.get('Token')
+token = os.environ.get('DISCORD_TOKEN)
 bot.run(token)
