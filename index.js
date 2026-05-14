@@ -2043,4 +2043,4 @@ async function updateLiveInfo(guild) {
     } catch (e) { console.error(e); }
 }
 
-client.login(process.env.MTQ5NTQxOTI1OTE0NzM4NjkyMA.GqfnEb.rsXZlj1ba3XeTdWk6RRZnIv3SNlrFJO1KVjeiQ);
+client.login(process.env.DISCORD_TOKEN);
