@@ -5,7 +5,6 @@ const {
     UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType,
     StringSelectMenuBuilder, PermissionFlagsBits
 } = require('discord.js');
-const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 // --- 1. تشغيل سيرفر الويب للبقاء أونلاين 24 ساعة ---
