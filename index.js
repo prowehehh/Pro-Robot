@@ -7,7 +7,19 @@ const {
 } = require('discord.js');
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+// --- 1. تشغيل سيرفر الويب للبقاء أونلاين 24 ساعة ---
 const app = express();
+const port = process.env.PORT || 8030;
+
+app.get('/', (req, res) => {
+  res.send('Pro Robot is Online! 🤖');
+});
+
+app.listen(port, () => {
+  console.log(`✅ Web Server is running on port ${port}`);
+});
+// --------------------------------------------------
 
 // ============================================================
 // --- ✅ [DATABASE] MongoDB Connection & Schema ---
@@ -33,7 +45,6 @@ async function getDB(guildId) {
     }
     return data;
 }
-
 const express = require('express');
 const app = express();
 const port = 3000;
