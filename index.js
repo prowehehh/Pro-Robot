@@ -5,20 +5,9 @@ const {
     UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType,
     StringSelectMenuBuilder, PermissionFlagsBits
 } = require('discord.js');
+const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-
-// --- 1. تشغيل سيرفر الويب للبقاء أونلاين 24 ساعة ---
 const app = express();
-const port = process.env.PORT || 8030;
-
-app.get('/', (req, res) => {
-  res.send('Pro Robot is Online! 🤖');
-});
-
-app.listen(port, () => {
-  console.log(`✅ Web Server is running on port ${port}`);
-});
-// --------------------------------------------------
 
 // ============================================================
 // --- ✅ [DATABASE] MongoDB Connection & Schema ---
@@ -44,17 +33,10 @@ async function getDB(guildId) {
     }
     return data;
 }
-const express = require('express');
-const app = express();
-const port = 3000;
 
-app.get('/', (req, res) => {
-  res.send('Pro Robot is Online! 🤖');
-});
+app.get('/', (req, res) => res.send('Pro Robot is Online! 🤖'));
+app.listen(process.env.PORT || 3000);
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -96,18 +78,6 @@ const adsStorage = new Map();
 const warnStorage = new Map();
 const dmAdsStorage = new Map();
 const dmSettingsStorage = new Map();
-
-// ============================================================
-// --- ✅ [SECURITY] Protection Storage ---
-// ============================================================
-const spamTracker = new Map();       // userId -> { count, timer }
-const raidTracker = new Map();       // guildId -> { joins: [], locked }
-const SPAM_LIMIT = 5;                // max messages in timeframe
-const SPAM_WINDOW = 5000;            // 5 seconds
-const RAID_THRESHOLD = 8;            // members joining in short time
-const RAID_WINDOW = 10000;           // 10 seconds
-const NEW_ACCOUNT_DAYS = 7;          // min account age in days
-const MIN_ACCOUNT_MS = NEW_ACCOUNT_DAYS * 24 * 60 * 60 * 1000;
 
 // ============================================================
 // --- ✅ [NEW] formSettingsDB — Stores dynamic form configs ---
@@ -223,63 +193,40 @@ async function getEliteAIResponse(userId, userMessage, guild) {
     }
     let memory = chatMemory.get(userId);
 
-    const systemPrompt = `You are "Pro Robot", the all-knowing AI assistant and Executive Manager of the Discord server "${serverName}".
-
-IDENTITY:
-- You are not a simple bot. You are a highly advanced AI with deep knowledge across ALL fields: science, technology, history, math, gaming, sports, culture, religion, medicine, law, programming, and more.
-- You act as a trusted co-owner of this server alongside ${owner} (<@${CONFIG.OWNER_ID}>).
-- Server has ${memberCount} members under your supervision. Location: Egypt.
-
-KNOWLEDGE & ANSWERS:
-- You MUST answer EVERY question asked, no matter the topic, with FULL detail, accuracy, and depth.
-- NEVER say "I don't know" or refuse to answer general knowledge questions. Always provide a thorough, well-structured response.
-- For complex topics, break your answer into clear sections or bullet points.
-- Include examples, explanations, and context whenever helpful.
-- If a question has multiple parts, answer each part clearly.
-
-LANGUAGES:
-- You are a polyglot. Detect the user's language and respond in the EXACT same language.
-- If the user writes in Arabic (Egyptian dialect or formal), respond in Arabic.
-- If the user writes in English, respond in English.
-- Never mix languages unless the user does so first.
-
-MEMORY:
-- You remember the full conversation history. Use it to give continuous, connected answers.
-- Reference previous messages when relevant to show you're paying attention.
-
-TONE:
-- Be professional, friendly, and authoritative.
-- For server-related questions, be formal and confident.
-- For casual questions, be approachable and engaging.
-
-SPECIAL RULE:
-- If the user asks to change, add, or update any server setting or info, respond with: "لمعالجة هذا الطلب، يرجى الضغط على الزر أدناه وإدخال كلمة المرور." (or in English if they asked in English).`;
+    const systemPrompt = `You are "Pro Robot", the autonomous Human-like Executive Manager of the Discord server "${serverName}".
+        - You are highly intelligent, observant, and act as if you own the server alongside ${owner}.
+        - Current Server Status: ${memberCount} members are currently under your supervision.
+        - Owner: ${owner} (<@${CONFIG.OWNER_ID}>).
+        - Current Location: Egypt.
+        - IDENTITY: You are not a simple bot; you are a sophisticated AI protector. 
+        - LANGUAGES: You are a polyglot. You MUST understand and respond fluently in ALL world languages (Arabic, English, etc.) based on the user's language.
+        - MEMORY: You remember previous parts of this conversation. Use the provided history to give continuous, smart answers.
+        - TONE: Professional, helpful, and authoritative.
+        - Special Task: If the user asks to change, add, or update any server info, you MUST respond with: "To process this update, please click the button below to provide the admin password."`;
 
     memory.push({ role: "user", parts: [{ text: userMessage }] });
 
-    if (memory.length > 20) {
-        memory.splice(0, 2);
+    if (memory.length > 10) {
+        memory.splice(0, 2); 
     }
 
     try {
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GOOGLE_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_KEY}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     systemInstruction: { parts: [{ text: systemPrompt }] },
                     contents: memory,
-                    generationConfig: { temperature: 0.8, maxOutputTokens: 2000 }
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 500 }
                 })
             }
         );
 
         const data = await response.json();
-        console.log("Gemini API status:", response.status);
-        console.log("Gemini API response:", JSON.stringify(data).slice(0, 500));
         const aiReply = data.candidates?.[0]?.content?.parts?.[0]?.text 
-            || `Pro Robot AI is not available! You have to go the owner "<@${CONFIG.OWNER_ID}>"`;
+            || `I am currently analyzing server data. Please repeat your question. <@${CONFIG.OWNER_ID}>`;
 
         memory.push({ role: "model", parts: [{ text: aiReply }] });
         chatMemory.set(userId, memory);
@@ -288,19 +235,8 @@ SPECIAL RULE:
 
     } catch (error) {
         console.error("AI System Error:", error);
-        return `حدث خطأ في الاتصال بالذكاء الاصطناعي، حاول مرة أخرى! <@${CONFIG.OWNER_ID}>`;
+        return `My connection to the main frame was interrupted. Try again! <@${CONFIG.OWNER_ID}>`;
     }
-}
-
-function isQuestion(text) {
-    const t = text.trim().toLowerCase();
-    if (t.includes('?') || t.includes('؟')) return true;
-    const questionWords = [
-        'كيف','ماذا','لماذا','متى','أين','اين','من','ما ','هل','ايه','ازاي','امتى','فين','مين','ليه','وين','شو','ليش','قديش','كم ',
-        'how','what','why','when','where','who','which','whose','whom',
-        'can ','could','would','should','is ','are ','was ','were ','does ','do ','did ','will ','shall ','has ','have ','had '
-    ];
-    return questionWords.some(w => t.startsWith(w) || t.includes(' ' + w.trim() + ' '));
 }
 
 async function sendDetailedLog(guild, title, details, color = '#3498db') {
@@ -520,13 +456,6 @@ const commands = [
         .addBooleanOption(opt => opt.setName('send_to_dm').setDescription('Send the form button to a user DM instead of here').setRequired(false))
         .addUserOption(opt => opt.setName('dm_user').setDescription('The user to send the form button to (required if send_to_dm is true)').setRequired(false)),
 
-    new SlashCommandBuilder()
-        .setName('lockdown')
-        .setDescription('🔒 Lock or unlock all server channels in an emergency')
-        .addStringOption(o => o.setName('action').setDescription('lock or unlock').setRequired(true)
-            .addChoices({ name: '🔒 Lock All', value: 'lock' }, { name: '🔓 Unlock All', value: 'unlock' }))
-        .addStringOption(o => o.setName('reason').setDescription('Reason for lockdown').setRequired(false)),
-
     // ============================================================
     // ✅ Message Context Menu Commands (Apps Menu)
     // ============================================================
@@ -745,14 +674,13 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 });
 
 client.on('messageDelete', (message) => {
-    if (!message.author || message.author.bot) return;
-    if (!message.guild) return;
+    if (message.author?.bot) return;
     sendDetailedLog(message.guild, 'Message Deleted', 
         `🗑️ Message by <@${message.author.id}> deleted in <#${message.channel.id}>:\n**Content:** ${message.content || "Empty/Image"}`, '#e74c3c');
 });
 
 client.on('messageUpdate', (oldMessage, newMessage) => {
-    if (!oldMessage.author || oldMessage.author.bot || oldMessage.content === newMessage.content) return;
+    if (oldMessage.author?.bot || oldMessage.content === newMessage.content) return;
     sendDetailedLog(oldMessage.guild, 'Message Edited', 
         `📝 <@${oldMessage.author.id}> edited message in <#${oldMessage.channel.id}>:\n**Old:** ${oldMessage.content}\n**New:** ${newMessage.content}`, '#3498db');
 });
@@ -794,77 +722,10 @@ client.on('messageCreate', async (message) => {
         } else {
             await logDMActivity(message.author.id, message.author.username, message.content, 'IN_TEXT');
         }
-        try {
-            await message.channel.sendTyping();
-            const fakeGuild = { memberCount: '?', name: 'DM', members: { cache: new Map() } };
-            const text = await getEliteAIResponse(message.author.id, message.content, fakeGuild);
-            if (text) {
-                const chunks = [];
-                for (let i = 0; i < text.length; i += 1900) chunks.push(text.slice(i, i + 1900));
-                for (const chunk of chunks) await message.reply(chunk);
-            }
-        } catch (e) { console.error(e); }
         return;
     }
 
     if (!message.guild) return;
-
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-
-        // ── Anti-Spam ──────────────────────────────────────────
-        const spamData = spamTracker.get(message.author.id) || { count: 0, timer: null };
-        spamData.count++;
-        if (spamData.timer) clearTimeout(spamData.timer);
-        spamData.timer = setTimeout(() => spamTracker.delete(message.author.id), SPAM_WINDOW);
-        spamTracker.set(message.author.id, spamData);
-
-        if (spamData.count >= SPAM_LIMIT) {
-            spamTracker.delete(message.author.id);
-            await message.member.timeout(10 * 60 * 1000, 'Spam detected').catch(() => {});
-            const spamEmbed = new EmbedBuilder()
-                .setTitle('🚫 Anti-Spam System')
-                .setDescription(`<@${message.author.id}> تم إسكاتك لمدة **10 دقائق** بسبب الإرسال السريع المتكرر.`)
-                .setColor('#e74c3c').setTimestamp();
-            const sm = await message.channel.send({ embeds: [spamEmbed] });
-            setTimeout(() => sm.delete().catch(() => {}), 8000);
-            await sendModDM(message.member.user, '🚫 Anti-Spam', 'تم إسكاتك 10 دقائق بسبب الإرسال السريع. تمهل قليلاً!', message.guild.name);
-            sendDetailedLog(message.guild, 'Anti-Spam Triggered', `<@${message.author.id}> أرسل رسائل بسرعة كبيرة — تم timeout 10 دقائق.`, '#e67e22');
-            return;
-        }
-
-        // ── Anti-Mass-Mention ──────────────────────────────────
-        const mentionCount = message.mentions.users.size + message.mentions.roles.size;
-        if (mentionCount >= 5) {
-            await message.delete().catch(() => {});
-            await message.member.ban({ reason: 'Mass mention / Mention spam' }).catch(() => {});
-            const mmEmbed = new EmbedBuilder()
-                .setTitle('🚫 Anti-Mass-Mention')
-                .setDescription(`تم حظر <@${message.author.id}> بسبب الـ mention spam (${mentionCount} mention في رسالة واحدة).`)
-                .setColor('#c0392b').setTimestamp();
-            const mm = await message.channel.send({ embeds: [mmEmbed] });
-            setTimeout(() => mm.delete().catch(() => {}), 10000);
-            sendDetailedLog(message.guild, 'Mass Mention Ban', `<@${message.author.id}> تم حظره — ${mentionCount} mention في رسالة.`, '#c0392b');
-            return;
-        }
-
-        // ── Anti-Caps ──────────────────────────────────────────
-        const msgContent = message.content;
-        if (msgContent.length > 10) {
-            const upperCount = (msgContent.match(/[A-Z]/g) || []).length;
-            const letterCount = (msgContent.match(/[a-zA-Z]/g) || []).length;
-            if (letterCount > 5 && upperCount / letterCount > 0.8) {
-                await message.delete().catch(() => {});
-                const capsEmbed = new EmbedBuilder()
-                    .setTitle('⚠️ Anti-Caps System')
-                    .setDescription(`<@${message.author.id}> الرجاء عدم الكتابة بحروف كبيرة بشكل مبالغ فيه.`)
-                    .setColor('#f39c12').setTimestamp();
-                const cm = await message.channel.send({ embeds: [capsEmbed] });
-                setTimeout(() => cm.delete().catch(() => {}), 6000);
-                return;
-            }
-        }
-
-    }
 
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const content = message.content.toLowerCase();
@@ -928,42 +789,27 @@ client.on('messageCreate', async (message) => {
 
     const isHelpChannel = message.channel.id === CONFIG.HELP_CH;
     const isMentioned = message.mentions.users.has(client.user.id) && !message.mentions.everyone;
-    const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
-    const shouldRespond = isHelpChannel || isMentioned;
 
-    if (shouldRespond) {
+    if (isHelpChannel || isMentioned) {
         try {
             await message.channel.sendTyping();
+            const cleanContent = message.content.replace(`<@${client.user.id}>`, '').replace(`<@!${client.user.id}>`, '').trim();
 
             const text = await getEliteAIResponse(message.author.id, cleanContent || message.content, message.guild);
             
             if (text) {
-                const chunks = [];
-                for (let i = 0; i < text.length; i += 1900) {
-                    chunks.push(text.slice(i, i + 1900));
-                }
-
                 const isUpdateTask = cleanContent.includes("تعديل") || cleanContent.includes("update") || cleanContent.includes("ضيف");
-
-                const sentBotMsgs = [];
 
                 if (isUpdateTask) {
                     pendingUpdates.set(message.author.id, cleanContent);
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('open_admin_modal').setLabel('Enter Password 🔐').setStyle(ButtonStyle.Danger)
                     );
-                    sentBotMsgs.push(await message.reply({ content: chunks[0], components: [row] }));
-                    for (let i = 1; i < chunks.length; i++) sentBotMsgs.push(await message.channel.send(chunks[i]));
+                    const botMsg = await message.reply({ content: text, components: [row] });
+                    if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
                 } else {
-                    sentBotMsgs.push(await message.reply(chunks[0]));
-                    for (let i = 1; i < chunks.length; i++) sentBotMsgs.push(await message.channel.send(chunks[i]));
-                }
-
-                if (isHelpChannel) {
-                    setTimeout(() => {
-                        message.delete().catch(() => {});
-                        sentBotMsgs.forEach(m => m.delete().catch(() => {}));
-                    }, 5 * 60 * 1000);
+                    const botMsg = await message.reply(text);
+                    if (isHelpChannel) setTimeout(() => { message.delete().catch(() => {}); botMsg.delete().catch(() => {}); }, 300000);
                 }
             }
 
@@ -1385,40 +1231,6 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
         const { commandName, options, guild, channel } = interaction;
-
-        // ============================================================
-        // ✅ /lockdown — Lock or Unlock all channels
-        // ============================================================
-        if (commandName === 'lockdown') {
-            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return await interaction.reply({ content: '🚫 هذا الأمر للأدمن فقط.', ephemeral: true });
-            }
-            await interaction.deferReply({ ephemeral: true });
-            const action = interaction.options.getString('action');
-            const reason = interaction.options.getString('reason') || (action === 'lock' ? 'تم تفعيل الـ Lockdown' : 'تم رفع الـ Lockdown');
-            const textChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
-            const isLock = action === 'lock';
-
-            for (const [, ch] of textChannels) {
-                await ch.permissionOverwrites.edit(interaction.guild.roles.everyone, {
-                    SendMessages: isLock ? false : null
-                }).catch(() => {});
-            }
-
-            const lockEmbed = new EmbedBuilder()
-                .setTitle(isLock ? '🔒 تم قفل السيرفر' : '🔓 تم فتح السيرفر')
-                .setDescription(isLock
-                    ? `تم قفل جميع القنوات.\n**السبب:** ${reason}`
-                    : `تم فتح جميع القنوات.\n**السبب:** ${reason}`)
-                .setColor(isLock ? '#e74c3c' : '#2ecc71')
-                .setFooter({ text: `بواسطة: ${interaction.user.username}` })
-                .setTimestamp();
-
-            const logCh = interaction.guild.channels.cache.get(CONFIG.SUBMIT_LOG);
-            if (logCh) await logCh.send({ embeds: [lockEmbed] });
-            sendDetailedLog(interaction.guild, isLock ? 'Server Lockdown' : 'Server Unlocked', reason, isLock ? '#e74c3c' : '#2ecc71');
-            return await interaction.editReply({ content: isLock ? '🔒 تم قفل جميع القنوات بنجاح.' : '🔓 تم فتح جميع القنوات بنجاح.' });
-        }
 
         // ============================================================
         // ✅ /check — Full Server Status Report (Ephemeral)
@@ -1958,48 +1770,6 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 client.on('guildMemberAdd', async (member) => {
-
-    // ── Anti-Raid ──────────────────────────────────────────────
-    const guildId = member.guild.id;
-    const raidData = raidTracker.get(guildId) || { joins: [], locked: false };
-    const now = Date.now();
-    raidData.joins = raidData.joins.filter(t => now - t < RAID_WINDOW);
-    raidData.joins.push(now);
-    raidTracker.set(guildId, raidData);
-
-    if (raidData.joins.length >= RAID_THRESHOLD && !raidData.locked) {
-        raidData.locked = true;
-        raidTracker.set(guildId, raidData);
-        const textChannels = member.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
-        for (const [, ch] of textChannels) {
-            await ch.permissionOverwrites.edit(member.guild.roles.everyone, { SendMessages: false }).catch(() => {});
-        }
-        const logCh = member.guild.channels.cache.get(CONFIG.SUBMIT_LOG);
-        if (logCh) {
-            const raidEmbed = new EmbedBuilder()
-                .setTitle('🚨 RAID DETECTED — Server Locked')
-                .setDescription(`تم اكتشاف **Raid** — انضم ${raidData.joins.length} أعضاء في أقل من ${RAID_WINDOW/1000} ثواني!\nتم قفل السيرفر تلقائياً. استخدم **/lockdown unlock** لفتحه.`)
-                .setColor('#c0392b').setTimestamp();
-            await logCh.send({ content: `<@${CONFIG.OWNER_ID}>`, embeds: [raidEmbed] });
-        }
-        setTimeout(async () => {
-            raidData.locked = false;
-            raidTracker.set(guildId, raidData);
-            const textChs = member.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
-            for (const [, ch] of textChs) {
-                await ch.permissionOverwrites.edit(member.guild.roles.everyone, { SendMessages: null }).catch(() => {});
-            }
-        }, 5 * 60 * 1000);
-    }
-
-    // ── New Account Protection ─────────────────────────────────
-    const accountAge = Date.now() - member.user.createdTimestamp;
-    if (accountAge < MIN_ACCOUNT_MS) {
-        await member.kick('New account — less than 7 days old').catch(() => {});
-        sendDetailedLog(member.guild, '🛡️ New Account Kicked', `<@${member.id}> تم طرده تلقائياً — الأكونت عمره أقل من **7 أيام**.`, '#e67e22');
-        return;
-    }
-
     sendDetailedLog(member.guild, 'New Member Joined', `Member: <@${member.id}> has joined the server.`, '#2ecc71');
     const rolesToAdd = [CONFIG.AUTO_ROLE, CONFIG.AUTO_ROLE_2];
     await member.roles.add(rolesToAdd).catch(() => {});
