@@ -1,12 +1,12 @@
-const { 
-    Client, GatewayIntentBits, Partials, PermissionsBitField, EmbedBuilder, 
+const {
+    Client, GatewayIntentBits, Partials, PermissionsBitField, EmbedBuilder,
     REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
     ModalBuilder, TextInputBuilder, TextInputStyle,
     UserSelectMenuBuilder, ContextMenuCommandBuilder, ApplicationCommandType,
     StringSelectMenuBuilder, PermissionFlagsBits
 } = require('discord.js');
 const express = require('express');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
 
 // ============================================================
@@ -82,8 +82,9 @@ const dmSettingsStorage = new Map();
 const formSettingsDB    = new Map();
 const pendingUpdates    = new Map();
 const chatMemory        = new Map();
-const clearSessionStore = new Map();   // stores pending /clear sessions
-const roleSessionStore  = new Map();   // stores pending /role sessions
+const clearSessionStore = new Map();
+const roleSessionStore  = new Map();
+const reportImageStore  = new Map(); // stores pending report image URLs before modal submit
 
 const ADMIN_PASSWORD = "Pro@Robot510";
 let   extraServerInfo = "";
@@ -151,7 +152,7 @@ async function logDMActivity(userId, username, content, type = 'IN_TEXT', extraD
         logEmbed = new EmbedBuilder()
             .setTitle('🤖 AI Automatic Response')
             .addFields(
-                { name: 'Target User', value: `<@${userId}>`,  inline: true },
+                { name: 'Target User', value: `<@${userId}>`,       inline: true },
                 { name: 'AI Response', value: content || '[Empty]', inline: false }
             )
             .setColor('#3498db').setTimestamp();
@@ -251,8 +252,8 @@ SPECIAL RULE:
                 })
             }
         );
-        const data     = await response.json();
-        const aiReply  = data.candidates?.[0]?.content?.parts?.[0]?.text
+        const data    = await response.json();
+        const aiReply = data.candidates?.[0]?.content?.parts?.[0]?.text
             || `Pro Robot AI is unavailable. Please contact the owner <@${CONFIG.OWNER_ID}>`;
         memory.push({ role: "model", parts: [{ text: aiReply }] });
         chatMemory.set(userId, memory);
@@ -285,9 +286,9 @@ async function sendDetailedLog(guild, title, details, color = '#3498db') {
     }, 2000);
 }
 
-const BAD_WORDS          = ['word1', 'word2', 'word3'];
-const inviteLinkRegex    = /(https?:\/\/)?(www\.)?(discord\.(gg|io|me|li)|discordapp\.com\/invite)\/.+[a-z]/gi;
-const generalLinkRegex   = /(https?:\/\/[^\s]+)/gi;
+const BAD_WORDS        = ['word1', 'word2', 'word3'];
+const inviteLinkRegex  = /(https?:\/\/)?(www\.)?(discord\.(gg|io|me|li)|discordapp\.com\/invite)\/.+[a-z]/gi;
+const generalLinkRegex = /(https?:\/\/[^\s]+)/gi;
 
 // ============================================================
 // --- [DM SMART SEND] ---
@@ -348,9 +349,19 @@ const executeSmartSend = async (user, initiator, settings) => {
 // ============================================================
 // --- [COMMANDS] Slash Command Definitions ---
 // ============================================================
+// NOTE ON VISIBILITY:
+//   - setDefaultMemberPermissions(0) = hidden from everyone except admins
+//   - setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator) = admin only
+//   - No setDefaultMemberPermissions() = visible to all members
+//
+// Commands visible to ALL members: translate, appeal, server-info, report
+// All other commands: Administrator only
+// All context menu (Apps) commands: Administrator only (hidden from regular users)
+// ============================================================
+
 const commands = [
 
-    // ─── OWNER / ADMIN ONLY ─────────────────────────────────
+    // ─── ADMIN ONLY COMMANDS ─────────────────────────────────
 
     new SlashCommandBuilder()
         .setName('ping')
@@ -358,7 +369,6 @@ const commands = [
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
         .setDMPermission(true),
 
-    // ── /clear redesigned with user selector ─────────────────
     new SlashCommandBuilder()
         .setName('clear')
         .setDescription('Delete messages in this channel')
@@ -393,7 +403,7 @@ const commands = [
         .setDMPermission(false),
 
     new SlashCommandBuilder()
-        .setName('ads_set')
+        .setName('ads-set')
         .setDescription('Create a new auto-advertisement')
         .addStringOption(o => o.setName('name').setDescription('Ad name').setRequired(true))
         .addStringOption(o => o.setName('text').setDescription('Ad content').setRequired(true))
@@ -406,7 +416,7 @@ const commands = [
         .setDMPermission(false),
 
     new SlashCommandBuilder()
-        .setName('ads_edit')
+        .setName('ads-edit')
         .setDescription('Edit or delete an existing ad')
         .addStringOption(o => o.setName('name').setDescription('Ad name').setRequired(true).setAutocomplete(true))
         .addStringOption(o => o.setName('text').setDescription('New text').setRequired(false))
@@ -425,7 +435,6 @@ const commands = [
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
         .setDMPermission(false),
 
-    // ── /role redesigned with user selector ──────────────────
     new SlashCommandBuilder()
         .setName('role')
         .setDescription('Give a role to one or more members')
@@ -443,7 +452,7 @@ const commands = [
         .setDMPermission(false),
 
     new SlashCommandBuilder()
-        .setName('slash_control')
+        .setName('slash-control')
         .setDescription('Restrict a command to a specific role')
         .addStringOption(o => o.setName('command_name').setDescription('Command to restrict').setRequired(true))
         .addRoleOption(o => o.setName('allowed_role').setDescription('Role allowed to use it').setRequired(true))
@@ -479,7 +488,6 @@ const commands = [
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
         .setDMPermission(false),
 
-    // ── /dm redesigned with unified select UI ────────────────
     new SlashCommandBuilder()
         .setName('dm')
         .setDescription('Send DMs to members')
@@ -616,7 +624,7 @@ const commands = [
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
         .setDMPermission(true),
 
-    // ─── PUBLIC COMMANDS ─────────────────────────────────────
+    // ─── PUBLIC COMMANDS (visible to all members) ─────────────
 
     new SlashCommandBuilder()
         .setName('translate')
@@ -624,13 +632,35 @@ const commands = [
         .addStringOption(o => o.setName('text').setDescription('Text to translate').setRequired(true))
         .addStringOption(o => o.setName('to').setDescription('Target language code (e.g: ar, en, fr)').setRequired(true))
         .setDMPermission(true),
+        // No setDefaultMemberPermissions = visible to everyone
 
     new SlashCommandBuilder()
         .setName('appeal')
         .setDescription('Submit an appeal for a ban, kick, or mute')
         .setDMPermission(true),
+        // No setDefaultMemberPermissions = visible to everyone
 
-    // ─── CONTEXT MENUS (Apps) ────────────────────────────────
+    new SlashCommandBuilder()
+        .setName('server-info')
+        .setDescription('View information about this server')
+        .setDMPermission(false),
+        // No setDefaultMemberPermissions = visible to everyone
+        // Response is ephemeral (only the user who ran it can see it)
+
+    new SlashCommandBuilder()
+        .setName('report')
+        .setDescription('Submit a report about anything in the server')
+        .addAttachmentOption(o =>
+            o.setName('image')
+             .setDescription('Optional: attach an image to support your report')
+             .setRequired(false)
+        )
+        .setDMPermission(false),
+        // No setDefaultMemberPermissions = visible to everyone
+
+    // ─── CONTEXT MENUS (Apps) — ADMIN ONLY ───────────────────
+    // setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    // hides these from regular members in the Apps menu
 
     new ContextMenuCommandBuilder()
         .setName('Delete Message')
@@ -654,7 +684,9 @@ const commands = [
 
     new ContextMenuCommandBuilder()
         .setName('Translate Message')
-        .setType(ApplicationCommandType.Message),
+        .setType(ApplicationCommandType.Message)
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+        // Changed from public to admin-only
 
 ].map(c => c.toJSON());
 
@@ -1282,10 +1314,10 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isUserSelectMenu() && interaction.customId.startsWith('clear_user_select_')) {
-        const parts      = interaction.customId.split('_');
-        const amount     = parseInt(parts[3]);
-        const chId       = parts[4];
-        const targetCh   = client.channels.cache.get(chId);
+        const parts       = interaction.customId.split('_');
+        const amount      = parseInt(parts[3]);
+        const chId        = parts[4];
+        const targetCh    = client.channels.cache.get(chId);
         const selectedIds = interaction.users.map(u => u.id);
         await interaction.update({ content: `🔍 Scanning for messages from **${selectedIds.length}** selected user(s)...`, components: [] });
         if (!targetCh) return;
@@ -1324,7 +1356,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isUserSelectMenu() && interaction.customId.startsWith('role_user_select_')) {
-        const roleId      = interaction.customId.replace('role_user_select_', '');
+        const roleId        = interaction.customId.replace('role_user_select_', '');
         const selectedUsers = interaction.users;
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles))
             return await interaction.reply({ content: '❌ You do not have permission to manage roles.', ephemeral: true });
@@ -1344,10 +1376,10 @@ client.on('interactionCreate', async (interaction) => {
 
     // ── Reaction Remove Select ────────────────────────────────
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('delete_reaction_')) {
-        const parts     = interaction.customId.split('_');
-        const chId      = parts[2];
-        const msgId     = parts[3];
-        const emojiVal  = interaction.values[0];
+        const parts    = interaction.customId.split('_');
+        const chId     = parts[2];
+        const msgId    = parts[3];
+        const emojiVal = interaction.values[0];
         try {
             const targetChannel = await client.channels.fetch(chId).catch(() => null);
             const targetMsg     = await targetChannel.messages.fetch(msgId).catch(() => null);
@@ -1534,8 +1566,8 @@ client.on('interactionCreate', async (interaction) => {
                 const tm = await tc.messages.fetch(msgId).catch(() => null);
                 if (!tm) return await interaction.reply({ content: '❌ Message not found.', ephemeral: true });
                 if (tm.embeds.length > 0) {
-                    const original   = tm.embeds[0];
-                    const updated    = new EmbedBuilder().setColor(original.color || '#3498db').setDescription(newText).setTimestamp();
+                    const original = tm.embeds[0];
+                    const updated  = new EmbedBuilder().setColor(original.color || '#3498db').setDescription(newText).setTimestamp();
                     if (original.title)        updated.setTitle(original.title);
                     if (original.image?.url)   updated.setImage(original.image.url);
                     if (original.footer?.text) updated.setFooter({ text: original.footer.text });
@@ -1583,9 +1615,9 @@ client.on('interactionCreate', async (interaction) => {
             const userDetails     = interaction.fields.getTextInputValue('user_details');
             const resultEmbed     = new EmbedBuilder().setColor('#5865F2').setTitle('📥 New Submission Received')
                 .addFields(
-                    { name: 'From User',       value: `<@${interaction.user.id}>`, inline: true },
-                    { name: 'Name',            value: userName },
-                    { name: 'Details',         value: userDetails || 'No details' }
+                    { name: 'From User', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'Name',      value: userName },
+                    { name: 'Details',   value: userDetails || 'No details' }
                 ).setTimestamp();
             try {
                 const targetChannel = await client.channels.fetch(targetChannelId);
@@ -1606,10 +1638,10 @@ client.on('interactionCreate', async (interaction) => {
                 const appealEmbed = new EmbedBuilder().setTitle('📩 New Appeal Received').setColor('#f1c40f')
                     .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() })
                     .addFields(
-                        { name: '👤 User',                    value: `<@${interaction.user.id}> (\`${interaction.user.id}\`)`, inline: false },
-                        { name: '🔨 Action Being Appealed',   value: appealAction || 'Not specified',   inline: false },
-                        { name: '📝 Reason / Explanation',    value: appealReason || 'No reason given', inline: false },
-                        { name: '📎 Additional Information',  value: appealExtra  || 'None',            inline: false }
+                        { name: '👤 User',                   value: `<@${interaction.user.id}> (\`${interaction.user.id}\`)`, inline: false },
+                        { name: '🔨 Action Being Appealed',  value: appealAction || 'Not specified',   inline: false },
+                        { name: '📝 Reason / Explanation',   value: appealReason || 'No reason given', inline: false },
+                        { name: '📎 Additional Information', value: appealExtra  || 'None',            inline: false }
                     )
                     .setFooter({ text: 'Pro Robot Appeal System' }).setTimestamp();
                 const acceptBtn = new ButtonBuilder().setCustomId(`appeal_accept_${interaction.user.id}`).setLabel('✅ Accept Appeal').setStyle(ButtonStyle.Success);
@@ -1621,6 +1653,46 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [new EmbedBuilder().setTitle('✅ Appeal Submitted')
                     .setDescription('Your appeal has been sent to the server administration.\nWe will review it and contact you as soon as possible.\n\nThank you for your patience.')
                     .setColor('#2ecc71').setFooter({ text: 'Pro Robot Appeal System' }).setTimestamp()],
+                ephemeral: true
+            });
+        }
+
+        // ── /report Modal Submit ──────────────────────────────
+        if (cid === 'report_modal') {
+            const reportTitle   = interaction.fields.getTextInputValue('report_title');
+            const reportDetails = interaction.fields.getTextInputValue('report_details');
+            const reportedUser  = interaction.fields.getTextInputValue('reported_user');
+            const imageUrl      = reportImageStore.get(interaction.user.id) || null;
+            reportImageStore.delete(interaction.user.id);
+
+            const logCh = client.channels.cache.get(CONFIG.SUBMIT_LOG);
+            if (logCh) {
+                const reportEmbed = new EmbedBuilder()
+                    .setTitle('🚨 New Report Received')
+                    .setColor('#e67e22')
+                    .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() })
+                    .addFields(
+                        { name: '👤 Reported By',    value: `<@${interaction.user.id}> (\`${interaction.user.id}\`)`, inline: false },
+                        { name: '🎯 Subject/Person', value: reportedUser || 'Not specified',                           inline: false },
+                        { name: '📋 Report Topic',   value: reportTitle  || 'No title',                               inline: false },
+                        { name: '📝 Details',        value: reportDetails || 'No details provided',                   inline: false },
+                        { name: '🖼️ Image Attached', value: imageUrl ? '✅ Yes (see below)' : '❌ No',               inline: false }
+                    )
+                    .setFooter({ text: 'Pro Robot Report System' })
+                    .setTimestamp();
+                if (imageUrl) reportEmbed.setImage(imageUrl);
+                await logCh.send({ embeds: [reportEmbed] });
+            }
+
+            recordSync('REPORT_SUBMITTED', `User <@${interaction.user.id}> submitted a report: ${reportTitle}`);
+
+            return await interaction.reply({
+                embeds: [new EmbedBuilder()
+                    .setTitle('✅ Report Submitted')
+                    .setDescription('Your report has been sent to the administration.\nWe will review it as soon as possible.\n\nThank you for helping keep the server safe.')
+                    .setColor('#2ecc71')
+                    .setFooter({ text: 'Pro Robot Report System' })
+                    .setTimestamp()],
                 ephemeral: true
             });
         }
@@ -1645,10 +1717,10 @@ client.on('interactionCreate', async (interaction) => {
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
             return await interaction.reply({ content: '🚫 This command is for admins only.', ephemeral: true });
         await interaction.deferReply({ ephemeral: true });
-        const action      = options.getString('action');
-        const reason      = options.getString('reason') || (action === 'lock' ? 'Lockdown activated' : 'Lockdown lifted');
+        const action       = options.getString('action');
+        const reason       = options.getString('reason') || (action === 'lock' ? 'Lockdown activated' : 'Lockdown lifted');
         const textChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
-        const isLock      = action === 'lock';
+        const isLock       = action === 'lock';
         for (const [, ch] of textChannels) {
             await ch.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: isLock ? false : null }).catch(() => {});
         }
@@ -1665,22 +1737,22 @@ client.on('interactionCreate', async (interaction) => {
 
     // ── /server-status ────────────────────────────────────────
     if (commandName === 'server-status') {
-        const g             = interaction.guild;
-        const members       = await g.members.fetch().catch(() => null);
-        const totalMembers  = g.memberCount;
-        const botCount      = members ? members.filter(m => m.user.bot).size : 0;
-        const humanCount    = totalMembers - botCount;
-        const onlineMembers = members ? members.filter(m => m.presence?.status === 'online').size : 0;
-        const idleMembers   = members ? members.filter(m => m.presence?.status === 'idle').size : 0;
-        const dndMembers    = members ? members.filter(m => m.presence?.status === 'dnd').size : 0;
+        const g              = interaction.guild;
+        const members        = await g.members.fetch().catch(() => null);
+        const totalMembers   = g.memberCount;
+        const botCount       = members ? members.filter(m => m.user.bot).size : 0;
+        const humanCount     = totalMembers - botCount;
+        const onlineMembers  = members ? members.filter(m => m.presence?.status === 'online').size : 0;
+        const idleMembers    = members ? members.filter(m => m.presence?.status === 'idle').size : 0;
+        const dndMembers     = members ? members.filter(m => m.presence?.status === 'dnd').size : 0;
         const offlineMembers = Math.max(0, humanCount - onlineMembers - idleMembers - dndMembers);
-        const channelCount  = g.channels.cache.size;
-        const roleCount     = g.roles.cache.size;
-        const boostCount    = g.premiumSubscriptionCount || 0;
-        const boostTier     = g.premiumTier || 0;
-        const createdAt     = `<t:${Math.floor(g.createdTimestamp / 1000)}:D>`;
-        const auditLogs     = await g.fetchAuditLogs({ limit: 10 }).catch(() => null);
-        const violations    = auditLogs?.entries
+        const channelCount   = g.channels.cache.size;
+        const roleCount      = g.roles.cache.size;
+        const boostCount     = g.premiumSubscriptionCount || 0;
+        const boostTier      = g.premiumTier || 0;
+        const createdAt      = `<t:${Math.floor(g.createdTimestamp / 1000)}:D>`;
+        const auditLogs      = await g.fetchAuditLogs({ limit: 10 }).catch(() => null);
+        const violations     = auditLogs?.entries
             .filter(e => [24, 20, 22].includes(e.action))
             .map(e => {
                 const actionName = e.action === 24 ? '🤐 Timeout' : e.action === 20 ? '👢 Kick' : '🚫 Ban';
@@ -1704,6 +1776,92 @@ client.on('interactionCreate', async (interaction) => {
             )
             .setFooter({ text: '🔒 This report is private and only visible to you.' }).setTimestamp();
         return await interaction.reply({ embeds: [statusEmbed], ephemeral: true });
+    }
+
+    // ── /server-info (NEW — visible to all members) ───────────
+    if (commandName === 'server-info') {
+        const g            = interaction.guild;
+        const totalMembers = g.memberCount;
+        const channelCount = g.channels.cache.size;
+        const roleCount    = g.roles.cache.size;
+        const boostCount   = g.premiumSubscriptionCount || 0;
+        const boostTier    = g.premiumTier || 0;
+        const createdAt    = `<t:${Math.floor(g.createdTimestamp / 1000)}:D>`;
+        const owner        = await g.fetchOwner().catch(() => null);
+
+        const verificationLevels = ['None', 'Low', 'Medium', 'High', 'Very High'];
+        const verificationText   = verificationLevels[g.verificationLevel] || 'Unknown';
+
+        const textChannels  = g.channels.cache.filter(c => c.type === ChannelType.GuildText).size;
+        const voiceChannels = g.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
+
+        const infoEmbed = new EmbedBuilder()
+            .setTitle(`🏠 ${g.name} — Server Info`)
+            .setColor('#3498db')
+            .addFields(
+                { name: '👑 Owner',          value: owner ? `<@${owner.id}>` : 'Unknown',                   inline: true  },
+                { name: '🌍 Server Region',  value: 'Egypt',                                                 inline: true  },
+                { name: '📅 Created',        value: createdAt,                                               inline: true  },
+                { name: '👥 Members',        value: `**${totalMembers}** total members`,                     inline: true  },
+                { name: '💬 Text Channels',  value: `**${textChannels}** channels`,                          inline: true  },
+                { name: '🔊 Voice Channels', value: `**${voiceChannels}** channels`,                         inline: true  },
+                { name: '🎭 Roles',          value: `**${roleCount}** roles`,                                inline: true  },
+                { name: '💎 Boosts',         value: `**${boostCount}** boosts (Tier **${boostTier}**)`,      inline: true  },
+                { name: '🔒 Verification',   value: `**${verificationText}**`,                               inline: true  },
+                { name: '🤖 Bot',            value: `<@${CONFIG.BOT_ID}>`,                                   inline: true  },
+                { name: '📋 Server ID',      value: `\`${g.id}\``,                                          inline: true  },
+                { name: '📌 Extra Info',     value: extraServerInfo || 'No recent updates.',                 inline: false }
+            )
+            .setFooter({ text: 'Pro Robot • Pro Server | This message is only visible to you.' })
+            .setTimestamp();
+
+        return await interaction.reply({ embeds: [infoEmbed], ephemeral: true });
+    }
+
+    // ── /report (NEW — visible to all members) ────────────────
+    if (commandName === 'report') {
+        const imageAttachment = options.getAttachment('image');
+        if (imageAttachment) {
+            reportImageStore.set(interaction.user.id, imageAttachment.url);
+        } else {
+            reportImageStore.delete(interaction.user.id);
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId('report_modal')
+            .setTitle('Submit a Report');
+
+        const titleField = new TextInputBuilder()
+            .setCustomId('report_title')
+            .setLabel('Report Topic / Title')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('e.g: Spam, Harassment, Inappropriate content...')
+            .setMaxLength(100)
+            .setRequired(true);
+
+        const reportedField = new TextInputBuilder()
+            .setCustomId('reported_user')
+            .setLabel('Who are you reporting? (Username or ID)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('e.g: username#0000 or a description of the issue')
+            .setMaxLength(100)
+            .setRequired(false);
+
+        const detailsField = new TextInputBuilder()
+            .setCustomId('report_details')
+            .setLabel('Report Details')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Please describe the issue in detail. Include when it happened, what was said/done, and any other relevant information.')
+            .setMaxLength(1000)
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(titleField),
+            new ActionRowBuilder().addComponents(reportedField),
+            new ActionRowBuilder().addComponents(detailsField)
+        );
+
+        return await interaction.showModal(modal);
     }
 
     // ── /security-status ──────────────────────────────────────
@@ -1800,8 +1958,8 @@ client.on('interactionCreate', async (interaction) => {
             if (!protectionSettings.get('sync'))
                 return await interaction.reply({ content: '❌ Sync is currently **disabled**. Enable it first with `/sync action:Enable Sync`.', ephemeral: true });
             await interaction.deferReply({ ephemeral: true });
-            const syncResults  = [];
-            const botMember    = guild.members.me;
+            const syncResults   = [];
+            const botMember     = guild.members.me;
             const requiredPerms = ['KickMembers', 'BanMembers', 'ManageMessages', 'ModerateMembers', 'ViewChannel', 'SendMessages'];
             const missingPerms  = requiredPerms.filter(p => !botMember.permissions.has(PermissionsBitField.Flags[p]));
             syncResults.push(missingPerms.length > 0
@@ -1910,7 +2068,7 @@ client.on('interactionCreate', async (interaction) => {
     // Defer for remaining commands
     await interaction.deferReply({ ephemeral: true }).catch(() => {});
     try {
-        const dbData       = await getDB(interaction.guild?.id || 'dm');
+        const dbData        = await getDB(interaction.guild?.id || 'dm');
         const allowedRoleId = dbData.cmdPermissions.get(commandName);
         if (allowedRoleId && !interaction.member?.roles.cache.has(allowedRoleId) && !interaction.member?.permissions.has(PermissionsBitField.Flags.Administrator))
             return await interaction.editReply({ content: `❌ Access Denied! This command requires the <@&${allowedRoleId}> role.` });
@@ -1922,7 +2080,6 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'clear') {
             const amount = options.getInteger('amount');
             const target = options.getString('target');
-
             if (target === 'everyone') {
                 const everyoneBtn = new ButtonBuilder()
                     .setCustomId(`clear_everyone_${amount}_${channel.id}`)
@@ -1933,7 +2090,6 @@ client.on('interactionCreate', async (interaction) => {
                     components: [new ActionRowBuilder().addComponents(everyoneBtn)]
                 });
             }
-
             if (target === 'select') {
                 const userSelector = new UserSelectMenuBuilder()
                     .setCustomId(`clear_user_select_${amount}_${channel.id}`)
@@ -1949,11 +2105,11 @@ client.on('interactionCreate', async (interaction) => {
 
         // ── /send ───────────────────────────────────────────────
         if (commandName === 'send') {
-            const msg     = options.getString('message');
-            const style   = options.getString('style');
-            const delay   = options.getInteger('delay_send');
+            const msg      = options.getString('message');
+            const style    = options.getString('style');
+            const delay    = options.getInteger('delay_send');
             const delAfter = options.getInteger('delete_after');
-            const color   = options.getString('color') || '#3498db';
+            const color    = options.getString('color') || '#3498db';
             await interaction.editReply({ content: `✅ Message will be sent in ${delay} minute(s).` });
             setTimeout(async () => {
                 let sent;
@@ -1963,8 +2119,8 @@ client.on('interactionCreate', async (interaction) => {
             }, delay * 60000);
         }
 
-        // ── /ads_set ────────────────────────────────────────────
-        if (commandName === 'ads_set') {
+        // ── /ads-set ────────────────────────────────────────────
+        if (commandName === 'ads-set') {
             const name = options.getString('name');
             const data = { name, text: options.getString('text'), channelId: options.getChannel('channel').id, interval: options.getInteger('interval'), deleteAfter: options.getInteger('delete'), style: options.getString('style'), timer: null, lastMsgId: null };
             adsStorage.set(name, data);
@@ -1972,8 +2128,8 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.editReply({ content: `✅ Ad activated: **${name}**` });
         }
 
-        // ── /ads_edit ───────────────────────────────────────────
-        if (commandName === 'ads_edit') {
+        // ── /ads-edit ───────────────────────────────────────────
+        if (commandName === 'ads-edit') {
             const name = options.getString('name');
             const ad   = adsStorage.get(name);
             if (!ad) return await interaction.editReply({ content: '❌ Ad not found.' });
@@ -1993,7 +2149,6 @@ client.on('interactionCreate', async (interaction) => {
             const target     = options.getString('target');
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles))
                 return await interaction.editReply({ content: "❌ You don't have permission to manage roles." });
-
             if (target === 'everyone') {
                 const everyoneBtn = new ButtonBuilder()
                     .setCustomId(`role_everyone_${targetRole.id}`)
@@ -2008,7 +2163,6 @@ client.on('interactionCreate', async (interaction) => {
                     components: [new ActionRowBuilder().addComponents(everyoneBtn, stopBtn)]
                 });
             }
-
             if (target === 'select') {
                 const userSelector = new UserSelectMenuBuilder()
                     .setCustomId(`role_user_select_${targetRole.id}`)
@@ -2034,8 +2188,8 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        // ── /slash_control ──────────────────────────────────────
-        if (commandName === 'slash_control') {
+        // ── /slash-control ──────────────────────────────────────
+        if (commandName === 'slash-control') {
             const targetCmd = options.getString('command_name');
             const role      = options.getRole('allowed_role');
             dbData.cmdPermissions.set(targetCmd, role.id);
@@ -2140,16 +2294,16 @@ client.on('interactionCreate', async (interaction) => {
 
         // ── /dm ─────────────────────────────────────────────────
         if (commandName === 'dm') {
-            const target         = options.getString('target');
-            const style          = options.getString('style');
-            const delay          = options.getInteger('delay_send');
-            const delAfter       = options.getInteger('delete_after');
-            const msgContent     = options.getString('message') || '';
-            const caption        = options.getString('caption') || '';
-            const image          = options.getAttachment('image');
-            const color          = options.getString('color') || '#3498db';
-            const reactionEmoji  = options.getString('reaction') || null;
-            const repeatInterval = options.getInteger('repeat_interval') || 0;
+            const target          = options.getString('target');
+            const style           = options.getString('style');
+            const delay           = options.getInteger('delay_send');
+            const delAfter        = options.getInteger('delete_after');
+            const msgContent      = options.getString('message') || '';
+            const caption         = options.getString('caption') || '';
+            const image           = options.getAttachment('image');
+            const color           = options.getString('color') || '#3498db';
+            const reactionEmoji   = options.getString('reaction') || null;
+            const repeatInterval  = options.getInteger('repeat_interval') || 0;
             const showDeleteButton = options.getBoolean('delete_button') || false;
 
             if (!msgContent && !image)
@@ -2248,7 +2402,7 @@ client.on('guildMemberAdd', async (member) => {
             if (logCh) {
                 const raidEmbed = new EmbedBuilder()
                     .setTitle('🚨 RAID DETECTED — Server Locked')
-                    .setDescription(`**Raid detected** — ${raidData.joins.length} members joined in less than ${RAID_WINDOW/1000} seconds!\nServer has been locked automatically. Use **/lockdown unlock** to unlock.`)
+                    .setDescription(`**Raid detected** — ${raidData.joins.length} members joined in less than ${RAID_WINDOW / 1000} seconds!\nServer has been locked automatically. Use **/lockdown unlock** to unlock.`)
                     .setColor('#c0392b').setTimestamp();
                 await logCh.send({ content: `<@${CONFIG.OWNER_ID}>`, embeds: [raidEmbed] });
             }
@@ -2336,13 +2490,7 @@ async function updateLiveInfo(guild) {
 }
 
 // ============================================================
-// --- [AUTOMOD BADGE] Auto-create AutoMod rule on join ---
-//
-// HOW TO GET THE AUTOMOD BADGE:
-// Discord awards the "AutoMod Power User" badge to bots that have
-// created at least 1 AutoMod rule via the API across 10+ servers.
-// This function runs automatically whenever the bot joins a new server.
-// Requirements: bot needs MANAGE_GUILD permission.
+// --- [AUTOMOD] Auto-create AutoMod rule on join ---
 // ============================================================
 async function setupAutoModRule(guild) {
     try {
