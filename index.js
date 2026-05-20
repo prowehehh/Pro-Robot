@@ -1094,8 +1094,9 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.reply({ content: '❌ This form has expired or was not found.', ephemeral: true });
         }
 
+        // التصليح هنا: غيرنا الـ CustomId ليطابق الجزء المخصص للاستقبال تحت بالكامل لتفادي الأخطاء
         const modal = new ModalBuilder()
-            .setCustomId(`submit_${interaction.customId}`)
+            .setCustomId(`submit_form_${interaction.customId}`)
             .setTitle('Server Form');
 
         formSettings.fields.forEach((fieldName, index) => {
@@ -1252,7 +1253,8 @@ client.on('interactionCreate', async (interaction) => {
     //    Uses custom field names + resultIsBox for output style
     // ============================================================
     if (interaction.isModalSubmit() && interaction.customId.startsWith('submit_form_')) {
-        const originalFormId = interaction.customId.replace('submit_', '');
+        // التصليح هنا: خلينا تعويض السلسلة يشيل السيرش بالكامل عشان يقدر يطلع الـ ID من الـ Map بشكل سليم 100%
+        const originalFormId = interaction.customId.replace('submit_form_', '');
         const formSettings   = formSettingsDB.get(originalFormId);
 
         if (!formSettings) {
