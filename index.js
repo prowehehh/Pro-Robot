@@ -69,7 +69,7 @@ const CONFIG = {
     BOT_ID: '1495419259147386920',
     HELP_CH: '1497909981725593712',
     SUBMIT_LOG: '1494367980702797935',
-    ROLE_CHANNEL: '1482874761951576228',
+    ROLE_CHANNEL: '148274761951576228',
     INFO_CH: '1484641160394702958',
     DM_LOG_CH: '1502084414421729340'
 };
@@ -530,6 +530,9 @@ const commands = [
 
 ].map(c => c.toJSON());
 
+// تفعيل مجهز الـ REST بشكل صحيح عام وليس محلياً لتفادي الأرور
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+
 function startAdLoop(adName, guildId) {
     const ad = adsStorage.get(adName);
     if (!ad) return;
@@ -757,8 +760,13 @@ client.on('messageReactionAdd', async (reaction, user) => {
 });
 
 client.on('ready', async () => {
-    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    try { await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); } catch (e) { console.error(e); }
+    try { 
+        // رفع الأوامر باستخدام مجهز الـ rest المعرف عالمياً
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); 
+        console.log('✅ Slash Commands Registered Successfully!');
+    } catch (e) { 
+        console.error('❌ Error registering slash commands:', e); 
+    }
     console.log(`Logged in as ${client.user.tag}`);
     updateLiveInfo();
 });
@@ -1451,8 +1459,8 @@ client.on('interactionCreate', async (interaction) => {
                 .setColor('#2b2d31')
                 .setTitle(`📊 Server Status Report — ${guild.name}`)
                 .addFields(
-                    { name: '👥 Members', value: `Total: **${totalMembers}** (Humans: **${humanCount}** | Bots: **${botCount}**)\n🟢 Online: **${onlineMembers}**  🟡 Idle: **${idleMembers}**  🔴 DND: **${dndMembers}**  ⚫ Offline: **${offlineMembers}**`, inline: false },
-                    { name: '📋 Server Info', value: `Channels: **${channelCount}**  |  Roles: **${roleCount}**\nBoosts: **${boostCount}** (Tier **${boostTier}**)  |  Verification: **${guild.verificationLevel}**\nCreated: ${createdAt}`, inline: false },
+                    { name: '👥 Members', value: `Total: **${totalMembers}** (Humans: **${humanCount}** | Bots: **${botCount}**)\n🟢 Online: **${onlineMembers}** 🟡 Idle: **${idleMembers}** 🔴 DND: **${dndMembers}** ⚫ Offline: **${offlineMembers}**`, inline: false },
+                    { name: '📋 Server Info', value: `Channels: **${channelCount}** |  Roles: **${roleCount}**\nBoosts: **${boostCount}** (Tier **${boostTier}**)  |  Verification: **${guild.verificationLevel}**\nCreated: ${createdAt}`, inline: false },
                     { name: '🔍 Server Health', value: healthStatus, inline: false },
                     { name: '🚫 Recent Actions (Kick / Ban / Timeout)', value: violations.length > 1024 ? violations.substring(0, 1020) + '...' : violations, inline: false }
                 )
