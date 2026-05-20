@@ -672,6 +672,12 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
             `You have been muted in **${newMember.guild.name}** ${duration}.\nReason: Violation of server rules.`,
             newMember.guild.name
         );
+        sendDetailedLog(newMember.guild, 'Member Timeout Added 🤐', `User: <@${newMember.id}> was timed out ${duration}.`, '#e67e22');
+    }
+
+    // فك التايم أوت
+    if (oldMember.communicationDisabledUntil && !newMember.communicationDisabledUntil) {
+        sendDetailedLog(newMember.guild, 'Member Timeout Removed 🔓', `User: <@${newMember.id}> timeout has expired or was removed.`, '#2ecc71');
     }
 
     if (oldMember.nickname !== newMember.nickname) {
@@ -683,10 +689,24 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     if (removedRoles.size > 0) sendDetailedLog(newMember.guild, 'Role Removed', `Role <@&${removedRoles.first().id}> removed from <@${newMember.id}>`, '#e74c3c');
 });
 
-client.on('channelCreate', (ch) => sendDetailedLog(ch.guild, 'Channel Created', `Name: **${ch.name}** (Type: ${ch.type})`, '#2ecc71'));
-client.on('channelDelete', (ch) => sendDetailedLog(ch.guild, 'Channel Deleted', `Name: **${ch.name}**`, '#e74c3c'));
-client.on('roleCreate', (role) => sendDetailedLog(role.guild, 'Role Created', `Role: **${role.name}**`, '#2ecc71'));
-client.on('roleDelete', (role) => sendDetailedLog(role.guild, 'Role Deleted', `Role: **${role.name}**`, '#e74c3c'));
+// ============================================================
+// --- ⚙️ [إضافة الـ Agent] قنوات ولوجات وأدوار بالكامل ---
+// ============================================================
+client.on('channelCreate', (ch) => sendDetailedLog(ch.guild, 'Channel Created', `Name: **${ch.name}** (Type: ${ch.type})\nID: \`${ch.id}\``, '#2ecc71'));
+client.on('channelDelete', (ch) => sendDetailedLog(ch.guild, 'Channel Deleted', `Name: **${ch.name}**\nID: \`${ch.id}\``, '#e74c3c'));
+client.on('channelUpdate', (oldCh, newCh) => {
+    if (oldCh.name !== newCh.name) {
+        sendDetailedLog(newCh.guild, 'Channel Name Updated 📝', `Channel: <#${newCh.id}>\nOld Name: \`${oldCh.name}\`\nNew Name: \`${newCh.name}\``, '#3498db');
+    }
+});
+
+client.on('roleCreate', (role) => sendDetailedLog(role.guild, 'Role Created', `Role: **${role.name}**\nID: \`${role.id}\``, '#2ecc71'));
+client.on('roleDelete', (role) => sendDetailedLog(role.guild, 'Role Deleted', `Role: **${role.name}**\nID: \`${role.id}\``, '#e74c3c'));
+client.on('roleUpdate', (oldRole, newRole) => {
+    if (oldRole.name !== newRole.name) {
+        sendDetailedLog(newRole.guild, 'Role Name Updated ⚙️', `Role ID: \`${newRole.id}\`\nOld Name: \`${oldRole.name}\`\nNew Name: \`${newRole.name}\``, '#3498db');
+    }
+});
 
 client.on('guildBanAdd', async (ban) => {
     await sendModDM(
@@ -695,7 +715,11 @@ client.on('guildBanAdd', async (ban) => {
         `You have been permanently banned from **${ban.guild.name}**.\nReason: ${ban.reason || 'Violation of server rules.'}`,
         ban.guild.name
     );
-    sendDetailedLog(ban.guild, 'Member Banned', `User: **${ban.user.tag}** was banned.`, '#c0392b');
+    sendDetailedLog(ban.guild, 'Member Banned 🚫', `User: **${ban.user.tag}** (\`${ban.user.id}\`) was banned.\nReason: \`${ban.reason || 'No reason specified'}\``, '#c0392b');
+});
+
+client.on('guildBanRemove', async (ban) => {
+    sendDetailedLog(ban.guild, 'Member Unbanned 🔓', `User: **${ban.user.tag}** (\`${ban.user.id}\`) has been unbanned.`, '#2ecc71');
 });
 
 // ============================================================
@@ -882,11 +906,13 @@ client.on('messageCreate', async (message) => {
                     .setFooter({ text: 'Next violation will result in a timeout.' });
                 const m = await message.channel.send({ embeds: [warnEmbed] });
                 setTimeout(() => m.delete().catch(() => {}), 10000);
+                sendDetailedLog(message.guild, 'Automod Warn (Link) ⚠️', `User <@${message.author.id}> received first warning for links.`, '#f1c40f');
 
             } else if (warns === 2) {
                 await message.member.timeout(60 * 60 * 1000, 'Sending links/Advertising').catch(() => {});
                 await sendModDM(message.member.user, '🤐 Timeout — 1 Hour', 'You have been muted for 1 hour for repeatedly sending unauthorized links or advertisements.', message.guild.name);
                 message.channel.send(`🤐 <@${message.author.id}> has been muted for 1 hour for repeated link violations.`);
+                sendDetailedLog(message.guild, 'Automod Timeout (Link) 🤐', `User <@${message.author.id}> timed out for 1 hour due to link spam.`, '#e67e22');
 
             } else {
                 await sendModDM(message.member.user, '🚫 Permanent Ban', 'You have been permanently banned for persistent advertising and security breaches.', message.guild.name);
@@ -908,10 +934,12 @@ client.on('messageCreate', async (message) => {
             await sendModDM(message.member.user, '🤐 Timeout — 5 Minutes', 'You have been muted for 5 minutes for using inappropriate language in the server.', message.guild.name);
             const m = await message.channel.send(`⚠️ <@${message.author.id}>, you have been muted for 5 minutes for swearing.`);
             setTimeout(() => m.delete().catch(() => {}), 10000);
+            sendDetailedLog(message.guild, 'Automod Warn (Bad Word) ⚠️', `User <@${message.author.id}> timed out for 5 mins for bad words.`, '#f1c40f');
         } else {
             await sendModDM(message.member.user, '🚫 Permanent Ban', 'You have been permanently banned for repeated use of inappropriate language.', message.guild.name);
             await message.member.ban({ reason: 'Repeated severe swearing' }).catch(() => {});
             message.channel.send(`🚫 <@${message.author.id}> has been permanently banned for repeated swearing.`);
+            sendDetailedLog(message.guild, 'Automod Ban (Bad Word) 🚫', `User <@${message.author.id}> permanently banned for explicit language.`, '#c0392b');
         }
         return;
     }
@@ -1094,7 +1122,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.reply({ content: '❌ This form has expired or was not found.', ephemeral: true });
         }
 
-        // التصليح هنا: غيرنا الـ CustomId ليطابق الجزء المخصص للاستقبال تحت بالكامل لتفادي الأخطاء
         const modal = new ModalBuilder()
             .setCustomId(`submit_form_${interaction.customId}`)
             .setTitle('Server Form');
@@ -1253,7 +1280,6 @@ client.on('interactionCreate', async (interaction) => {
     //    Uses custom field names + resultIsBox for output style
     // ============================================================
     if (interaction.isModalSubmit() && interaction.customId.startsWith('submit_form_')) {
-        // التصليح هنا: خلينا تعويض السلسلة يشيل السيرش بالكامل عشان يقدر يطلع الـ ID من الـ Map بشكل سليم 100%
         const originalFormId = interaction.customId.replace('submit_form_', '');
         const formSettings   = formSettingsDB.get(originalFormId);
 
@@ -1525,7 +1551,6 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.reply({ content: '❌ You need Administrator permission to use this command.', ephemeral: true });
             }
 
-            // Collect all options
             const messageText   = options.getString('message_text');
             const isBox         = options.getBoolean('is_box');
             const btnName       = options.getString('btn_name');
@@ -1535,14 +1560,12 @@ client.on('interactionCreate', async (interaction) => {
             const sendToDM      = options.getBoolean('send_to_dm') || false;
             const dmUser        = options.getUser('dm_user');
 
-            // Collect custom field names (1 required, 2–5 optional)
             const fields = [];
             for (let i = 1; i <= 5; i++) {
                 const fieldName = options.getString(`field_${i}_name`);
                 if (fieldName) fields.push(fieldName);
             }
 
-            // Store settings with a unique timestamped ID
             const uniqueFormId = `form_${Date.now()}`;
             formSettingsDB.set(uniqueFormId, {
                 fields,
@@ -1564,7 +1587,6 @@ client.on('interactionCreate', async (interaction) => {
 
             const row = new ActionRowBuilder().addComponents(button);
 
-            // Mode 1: Send button to a user's DM
             if (sendToDM) {
                 if (!dmUser) {
                     return await interaction.reply({ content: '❌ You must select a user in `dm_user` when `send_to_dm` is true.', ephemeral: true });
@@ -1586,8 +1608,6 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
-            // Mode 2: Send button in the current channel
-            // Reply to the admin in secret, then post the message publicly
             await interaction.reply({ content: '✅ Done! I sent your message.', ephemeral: true });
 
             if (isBox) {
@@ -1623,6 +1643,7 @@ client.on('interactionCreate', async (interaction) => {
                 const roleEmbed = new EmbedBuilder().setTitle('✨ New Rank Given').setDescription(`**Member:** <@${targetUser.id}>\n**Rank:** <@&${targetRole.id}>\n**By:** <@${interaction.user.id}>`).setColor('#3498db').setTimestamp();
                 if (roleChan) await roleChan.send({ embeds: [roleEmbed] });
                 await sendModDM(targetUser.user, `✨ New Role — ${targetRole.name}`, `You have been given the **${targetRole.name}** role by <@${interaction.user.id}>!`, guild.name);
+                sendDetailedLog(guild, 'Role Assigned Manually 👑', `User <@${targetUser.id}> was given role <@&${targetRole.id}> by <@${interaction.user.id}>.`, '#2ecc71');
                 return await interaction.editReply({ content: `✅ Successfully gave **${targetRole.name}** to **${targetUser.user.username}**.` });
             }
 
@@ -2026,7 +2047,7 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 client.on('guildMemberRemove', async (member) => {
-    sendDetailedLog(member.guild, 'Member Left', `User: **${member.user.tag}** left the server.`, '#e74c3c');
+    sendDetailedLog(member.guild, 'Member Left 👥', `User: **${member.user.tag}** (\`${member.user.id}\`) left the server.`, '#e74c3c');
     updateLiveInfo(member.guild);
 });
 
